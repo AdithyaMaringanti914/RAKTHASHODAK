@@ -1,0 +1,7 @@
+project_id = "biccflgjfutwxppqhbjt"
+
+[functions.requests]
+verify_jwt = false
+
+[functions.donors-nearby]
+verify_jwt = false
