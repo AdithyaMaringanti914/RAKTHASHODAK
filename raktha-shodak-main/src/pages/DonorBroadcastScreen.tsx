@@ -42,10 +42,8 @@ const DonorBroadcastScreen = () => {
       units,
       urgency,
       status: "OPEN", // Strict State Machine
-      latitude: safeLat, // Using decoupled standalone coordinate target 
-      longitude: safeLng,
       
-      // Setting minimal mock identifiers if frontend expects DB fields structurally
+      // Using legacy structural columns strictly to solve the Supabase "column missing" cache errors securely 
       hospital_name: "Emergency Broadcast Ping",
       hospital_lat: safeLat,
       hospital_lng: safeLng,
