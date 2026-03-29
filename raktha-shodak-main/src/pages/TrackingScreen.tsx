@@ -91,8 +91,9 @@ const TrackingScreen = () => {
         },
         (payload) => {
           const row = payload.new as any;
-          if (row.status === "ASSIGNED") setStatus("ASSIGNED");
+          if (row.status === "ASSIGNED" || row.status === "assigned") setStatus("ASSIGNED");
           if (row.status === "FAILED") alert("This request has timed out and failed.");
+          if (row.status === "searching") setStatus("OPEN");
         }
       )
       .subscribe();

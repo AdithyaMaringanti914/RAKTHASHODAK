@@ -41,10 +41,11 @@ const DonorBroadcastScreen = () => {
       blood_group: bloodGroup,
       units,
       urgency,
-      status: "OPEN", // Strict State Machine
+      status: "searching", // Legacy RLS requirement fallback bypassing missing schema updates
       
       // Using legacy structural columns strictly to solve the Supabase "column missing" cache errors securely 
       hospital_name: "Emergency Broadcast Ping",
+      hospital_address: "Current Geolocation",
       hospital_lat: safeLat,
       hospital_lng: safeLng,
     };
