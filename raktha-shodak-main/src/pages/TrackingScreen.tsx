@@ -9,6 +9,7 @@ import StatusBadge from "@/components/StatusBadge";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const TrackingScreen = () => {
   const navigate = useNavigate();
@@ -30,6 +31,52 @@ const TrackingScreen = () => {
   );
   const [eta, setEta] = useState(12);
   const [donorPos, setDonorPos] = useState({ lat: hospitalLat + 0.015, lng: hospitalLng - 0.012 });
+  const [nearbyDonors, setNearbyDonors] = useState<any[]>([]);
+  const [timeLeft, setTimeLeft] = useState(300); // 5 minutes in seconds
+
+  // Periodically fetch available donors nearby (within 15km)
+  useEffect(() => {
+    if (isDonor || status !== "OPEN") return;
+    const fetchNearby = async () => {
+      const { data } = await supabase.from('profiles').select('*').eq('is_available', true);
+      if (data) {
+        const filtered = data.filter((d: any) => {
+          if (!d.latitude || !d.longitude) return false;
+          // Approximate Euclidean bounds logic for UI proximity rendering
+          const dist = Math.sqrt(Math.pow(d.latitude - hospitalLat, 2) + Math.pow(d.longitude - hospitalLng, 2)) * 111;
+          return dist <= 15;
+        });
+        setNearbyDonors(filtered);
+      }
+    };
+    fetchNearby();
+    const interval = setInterval(fetchNearby, 8000);
+    return () => clearInterval(interval);
+  }, [isDonor, status, hospitalLat, hospitalLng]);
+
+  // Handle 5 minute timeout logic
+  useEffect(() => {
+    if (isDonor || status !== "OPEN" || !requestId) return;
+
+    if (timeLeft <= 0) {
+      const failRequest = async () => {
+        await supabase
+          .from("blood_requests")
+          .update({ status: "FAILED" })
+          .eq("id", requestId);
+        
+        toast.error("Request Timed Out", {
+          description: "No donors were able to accept your request in time. Please try broadcasting again.",
+        });
+        navigate("/");
+      };
+      failRequest();
+      return;
+    }
+
+    const timer = setInterval(() => setTimeLeft((t) => t - 1), 1000);
+    return () => clearInterval(timer);
+  }, [timeLeft, status, isDonor, requestId, navigate]);
 
   // If donor with GPS, use real position
   useEffect(() => {
@@ -164,7 +211,7 @@ const TrackingScreen = () => {
   return (
     <div className="relative h-screen w-full max-w-lg mx-auto overflow-hidden bg-background">
       <MapView
-        donors={[]}
+        donors={nearbyDonors}
         hospitalMarker={{ lat: hospitalLat, lng: hospitalLng, name: requestData.hospital || "Dispatch Target" }}
         donorTrack={status !== "OPEN" ? donorPos : undefined}
         showRoute={status === "EN_ROUTE"}
@@ -183,104 +230,132 @@ const TrackingScreen = () => {
         </button>
       </div>
 
-      {/* Searching overlay */}
-      {status === "OPEN" && (
-        <div className="absolute inset-0 flex items-center justify-center z-[999] pointer-events-none">
-          <div className="text-center">
-             <div className="bg-background/80 backdrop-blur-md px-6 py-8 rounded-3xl shadow-2xl border border-border">
-                <motion.div
-                  className="w-24 h-24 rounded-full border-4 border-primary/40 mx-auto mb-4"
-                  animate={{ scale: [1, 1.5, 1], opacity: [0.8, 0, 0.8] }}
-                  transition={{ duration: 1.5, repeat: Infinity }}
-                />
-                <p className="text-xl font-bold text-foreground">Awaiting Donor</p>
-                <p className="text-sm text-muted-foreground mt-1 text-center max-w-[200px] mx-auto">
-                    Your emergency request is visible to community proxies in range.
-                </p>
-             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bottom sheet */}
-      {status !== "OPEN" && (
-        <BottomSheet>
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <p className="text-label mb-1">{isDonor ? "Your Delivery" : "Donor Found"}</p>
-              <p className="text-display min-w-[150px] leading-tight mb-2">
-                 {status === "ASSIGNED" ? (isDonor ? "Awaiting Start" : "Donor Assigned") : 
-                  status === "EN_ROUTE" ? (isDonor ? "Navigate to Target" : "Donor En Route") : 
-                  (isDonor ? "Target Reached" : "Donor Arrived")}
-              </p>
-              <p className="text-body text-muted-foreground font-bold">
-                {requestData.bloodGroup || "Emergency"} • {requestData.units || 1} Units
-              </p>
+      {/* Navigation elements moved into BottomSheet for layout consistency */}
+      <BottomSheet>
+        {status === "OPEN" ? (
+          <div className="py-2">
+            <div className="flex flex-col items-center mb-6">
+              <motion.div
+                className="w-14 h-14 rounded-full border-4 border-primary/40 mb-3"
+                animate={{ scale: [1, 1.2, 1], opacity: [0.8, 0.4, 0.8] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+              />
+              <h2 className="text-xl font-bold text-foreground">Awaiting Donor</h2>
+              <p className="text-sm text-muted-foreground mt-1 text-center font-medium">Searching for available matches...</p>
+              
+              <div className="mt-4 flex items-center justify-center gap-2 bg-primary/10 px-4 py-2 rounded-full border border-primary/20">
+                <span className="text-xs font-black text-primary uppercase tracking-widest">Timeout In</span>
+                <span className="text-sm font-bold text-primary font-mono tracking-tighter">
+                  {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
+                </span>
+              </div>
             </div>
-            
-            {/* Status Visualizer placeholder to bypass old Badge types */}
-            <span className="bg-primary/20 text-primary px-3 py-1 font-black text-xs uppercase tracking-wider rounded-full h-min whitespace-nowrap">
-              {status.replace("_", " ")}
-            </span>
-          </div>
 
-          {status === "EN_ROUTE" && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-secondary rounded-2xl p-4 mb-4">
-              <p className="text-label mb-1">Estimated Arrival</p>
-              <div className="flex items-baseline gap-1">
-                <span className="text-4xl font-bold text-foreground">{eta}</span>
-                <span className="text-sm text-muted-foreground font-medium">min</span>
+            {nearbyDonors.length > 0 && (
+              <div className="w-full text-left bg-secondary/30 rounded-2xl p-4">
+                <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground mb-3">
+                  {nearbyDonors.length} Potential Match{(nearbyDonors.length !== 1) ? 'es' : ''} Pinging
+                </p>
+                <div className="space-y-3 max-h-[40vh] overflow-y-auto pr-1 custom-scrollbar">
+                  {nearbyDonors.map(donor => (
+                    <div key={donor.id} className="flex items-center gap-3 bg-card p-3 rounded-xl border border-border/50">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-black flex-shrink-0">
+                        {donor.blood_group || "?"}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-sm text-foreground truncate">{donor.full_name}</p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5 font-medium">
+                          <span>⭐ {donor.reliability_score?.toFixed(1) || "5.0"}</span>
+                          <span>• {donor.total_donations || 0} donations</span>
+                        </p>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground text-right flex-shrink-0 font-medium">
+                        Last Active<br/>
+                        <span className="font-bold text-foreground opacity-80">{donor.last_donation_date ? new Date(donor.last_donation_date).toLocaleDateString() : "Recently"}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </motion.div>
-          )}
-
-          {status === "ARRIVED" && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="bg-success/10 rounded-2xl p-5 mb-4 text-center border border-success/20"
-            >
-              <div className="w-12 h-12 rounded-full bg-success text-success-foreground mx-auto flex items-center justify-center font-black text-2xl mb-2">
-                ✓
-              </div>
-              <p className="font-bold text-success text-lg">{isDonor ? "You have arrived successfully" : "Donor has arrived"}</p>
-              <p className="text-xs text-muted-foreground mt-1">Please coordinate the handover.</p>
-            </motion.div>
-          )}
-
-          {/* Donor action buttons */}
-          {isDonor && status === "ASSIGNED" && (
-            <motion.button
-              whileTap={{ scale: 0.97 }}
-              onClick={handleMarkEnRoute}
-              className="w-full h-14 bg-accent text-accent-foreground rounded-2xl font-black text-[15px] shadow-button mb-3 uppercase tracking-wider"
-            >
-              Start Navigation
-            </motion.button>
-          )}
-          {isDonor && status === "EN_ROUTE" && (
-            <motion.button
-              whileTap={{ scale: 0.97 }}
-              onClick={handleMarkArrived}
-              className="w-full h-14 bg-success text-success-foreground rounded-2xl font-black text-[15px] mb-3 uppercase tracking-wider shadow-button hover:bg-success/90 transition-colors"
-            >
-              Mark as Arrived
-            </motion.button>
-          )}
-
-          <div className="flex gap-3">
-            <button className="flex-1 h-12 bg-secondary rounded-2xl flex items-center justify-center gap-2 text-sm font-semibold text-foreground hover:bg-secondary/80">
-              <Phone className="w-4 h-4" /> Call
-            </button>
-            <button
-              onClick={() => requestId && setChatOpen(true)}
-              className="flex-1 h-12 bg-secondary rounded-2xl flex items-center justify-center gap-2 text-sm font-semibold text-foreground hover:bg-secondary/80"
-            >
-              <MessageSquare className="w-4 h-4" /> Message
-            </button>
+            )}
           </div>
-        </BottomSheet>
-      )}
+        ) : (
+          <>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <p className="text-label mb-1">{isDonor ? "Your Delivery" : "Donor Found"}</p>
+                <p className="text-display min-w-[150px] leading-tight mb-2 uppercase">
+                   {status === "ASSIGNED" ? (isDonor ? "Awaiting Start" : "Donor Assigned") : 
+                    status === "EN_ROUTE" ? (isDonor ? "In Transit" : "Donor En Route") : 
+                    (isDonor ? "Arrived" : "Donor Arrived")}
+                </p>
+                <p className="text-body text-muted-foreground font-bold">
+                  {requestData.bloodGroup || "Emergency"} • {requestData.units || 1} Units
+                </p>
+              </div>
+              
+              <span className="bg-primary/20 text-primary px-3 py-1 font-black text-xs uppercase tracking-wider rounded-full h-min">
+                {status.replace("_", " ")}
+              </span>
+            </div>
+
+            {status === "EN_ROUTE" && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-secondary rounded-2xl p-4 mb-4">
+                <p className="text-label mb-1">Estimated Arrival</p>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-4xl font-bold text-foreground">{eta}</span>
+                  <span className="text-sm text-muted-foreground font-medium">min</span>
+                </div>
+              </motion.div>
+            )}
+
+            {status === "ARRIVED" && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-success/10 rounded-2xl p-5 mb-4 text-center border border-success/20"
+              >
+                <div className="w-12 h-12 rounded-full bg-success text-success-foreground mx-auto flex items-center justify-center font-black text-2xl mb-2">
+                  ✓
+                </div>
+                <p className="font-bold text-success text-lg">{isDonor ? "Target Reached" : "Donor Arrived"}</p>
+                <p className="text-xs text-muted-foreground mt-1 font-medium">Coordinate the handover via chat or call.</p>
+              </motion.div>
+            )}
+
+            {isDonor && status === "ASSIGNED" && (
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={handleMarkEnRoute}
+                className="w-full h-14 bg-accent text-accent-foreground rounded-2xl font-black text-[15px] shadow-button mb-3 uppercase tracking-wider"
+              >
+                Start Navigation
+              </motion.button>
+            )}
+            {isDonor && status === "EN_ROUTE" && (
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={handleMarkArrived}
+                className="w-full h-14 bg-success text-success-foreground rounded-2xl font-black text-[15px] mb-3 uppercase tracking-wider shadow-button"
+              >
+                Mark as Arrived
+              </motion.button>
+            )}
+
+            <div className="flex gap-3 mt-2">
+              <button className="flex-1 h-12 bg-secondary rounded-2xl flex items-center justify-center gap-2 text-sm font-bold text-foreground hover:bg-secondary/80 transition-all">
+                <Phone className="w-4 h-4" /> Call
+              </button>
+              <button
+                onClick={() => requestId && setChatOpen(true)}
+                className="flex-1 h-12 bg-secondary rounded-2xl flex items-center justify-center gap-2 text-sm font-bold text-foreground hover:bg-secondary/80 transition-all"
+              >
+                <MessageSquare className="w-4 h-4" /> Message
+              </button>
+            </div>
+          </>
+        )}
+      </BottomSheet>
 
       {requestId && (
         <ChatSheet requestId={requestId} open={chatOpen} onClose={() => setChatOpen(false)} />

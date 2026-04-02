@@ -1,26 +1,69 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { motion } from "framer-motion";
-import { Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Mail, Lock, Eye, EyeOff, Phone, KeyRound } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
 import { toast } from "sonner";
 
 const LoginScreen = () => {
   const navigate = useNavigate();
+  const [mode, setMode] = useState<"email" | "phone">("email");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [focused, setFocused] = useState<string | null>(null);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) {
       toast.error(error.message);
+    } else {
+      navigate("/");
+    }
+  };
+
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    
+    // Auto-format phone for Twilio requirement
+    const cleanPhone = phone.replace(/[^0-9+]/g, '');
+    const formattedPhone = cleanPhone.startsWith('+') ? cleanPhone : `+91${cleanPhone}`;
+    
+    const { error } = await supabase.auth.signInWithOtp({ phone: formattedPhone });
+    setLoading(false);
+    if (error) {
+      toast.error(`OTP Failed: ${error.message}`);
+    } else {
+      setOtpSent(true);
+      toast.success(`Secure OTP dispatched to ${formattedPhone}!`);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    
+    const cleanPhone = phone.replace(/[^0-9+]/g, '');
+    const formattedPhone = cleanPhone.startsWith('+') ? cleanPhone : `+91${cleanPhone}`;
+    
+    const { error } = await supabase.auth.verifyOtp({ 
+      phone: formattedPhone, 
+      token: otpCode, 
+      type: 'sms' 
+    });
+    
+    setLoading(false);
+    if (error) {
+      toast.error(`Verification Failed: ${error.message}`);
     } else {
       navigate("/");
     }
@@ -55,78 +98,182 @@ const LoginScreen = () => {
           <p className="text-sm text-muted-foreground mt-2 font-medium">Every drop counts. Sign in to save lives.</p>
         </div>
 
+        {/* Mode Toggle */}
+        <div className="flex bg-secondary/50 p-1 rounded-2xl mb-8">
+          <button
+            onClick={() => setMode("email")}
+            className={`flex-1 h-10 rounded-xl text-sm font-semibold transition-all ${
+              mode === "email" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Email
+          </button>
+          <button
+            onClick={() => setMode("phone")}
+            className={`flex-1 h-10 rounded-xl text-sm font-semibold transition-all ${
+              mode === "phone" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Phone OTP
+          </button>
+        </div>
+
         {/* Form */}
-        <form onSubmit={handleLogin} className="space-y-3 mb-6">
-          {/* Email */}
-          <div
-            className={`relative flex items-center gap-3 bg-card border-2 rounded-2xl px-4 h-14 transition-all duration-200 ${
-              focused === "email"
-                ? "border-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.1)]"
-                : "border-border"
-            }`}
-          >
-            <Mail className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${focused === "email" ? "text-primary" : "text-muted-foreground"}`} />
-            <input
-              type="email"
-              placeholder="Email address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onFocus={() => setFocused("email")}
-              onBlur={() => setFocused(null)}
-              required
-              className="flex-1 bg-transparent text-sm text-foreground font-medium placeholder:text-muted-foreground/60 outline-none"
-            />
-          </div>
+        <div className="mb-6 relative min-h-[160px]">
+          <AnimatePresence mode="wait">
+            {mode === "email" ? (
+              <motion.form 
+                key="email-form"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+                onSubmit={handleEmailLogin} 
+                className="space-y-3 absolute inset-0"
+              >
+                {/* Email */}
+                <div
+                  className={`relative flex items-center gap-3 bg-card border-2 rounded-2xl px-4 h-14 transition-all duration-200 ${
+                    focused === "email"
+                      ? "border-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.1)]"
+                      : "border-border"
+                  }`}
+                >
+                  <Mail className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${focused === "email" ? "text-primary" : "text-muted-foreground"}`} />
+                  <input
+                    type="email"
+                    placeholder="Email address"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onFocus={() => setFocused("email")}
+                    onBlur={() => setFocused(null)}
+                    required
+                    className="flex-1 bg-transparent text-sm text-foreground font-medium placeholder:text-muted-foreground/60 outline-none"
+                  />
+                </div>
 
-          {/* Password */}
-          <div
-            className={`relative flex items-center gap-3 bg-card border-2 rounded-2xl px-4 h-14 transition-all duration-200 ${
-              focused === "password"
-                ? "border-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.1)]"
-                : "border-border"
-            }`}
-          >
-            <Lock className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${focused === "password" ? "text-primary" : "text-muted-foreground"}`} />
-            <input
-              type={showPassword ? "text" : "password"}
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onFocus={() => setFocused("password")}
-              onBlur={() => setFocused(null)}
-              required
-              className="flex-1 bg-transparent text-sm text-foreground font-medium placeholder:text-muted-foreground/60 outline-none"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-              tabIndex={-1}
-            >
-              {showPassword ? <EyeOff className="w-[18px] h-[18px]" /> : <Eye className="w-[18px] h-[18px]" />}
-            </button>
-          </div>
+                {/* Password */}
+                <div
+                  className={`relative flex items-center gap-3 bg-card border-2 rounded-2xl px-4 h-14 transition-all duration-200 ${
+                    focused === "password"
+                      ? "border-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.1)]"
+                      : "border-border"
+                  }`}
+                >
+                  <Lock className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${focused === "password" ? "text-primary" : "text-muted-foreground"}`} />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onFocus={() => setFocused("password")}
+                    onBlur={() => setFocused(null)}
+                    required
+                    className="flex-1 bg-transparent text-sm text-foreground font-medium placeholder:text-muted-foreground/60 outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-[18px] h-[18px]" /> : <Eye className="w-[18px] h-[18px]" />}
+                  </button>
+                </div>
 
-          {/* Submit */}
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            type="submit"
-            disabled={loading}
-            className="w-full h-14 bg-primary text-primary-foreground rounded-2xl font-bold text-[15px] shadow-button disabled:opacity-60 mt-2"
-          >
-            {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                Signing in…
-              </span>
+                {/* Submit Email */}
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  type="submit"
+                  disabled={loading}
+                  className="w-full h-14 bg-primary text-primary-foreground rounded-2xl font-bold text-[15px] shadow-button disabled:opacity-60 mt-2"
+                >
+                  {loading ? "Signing in…" : "Sign In"}
+                </motion.button>
+              </motion.form>
             ) : (
-              "Sign In"
+              <motion.form 
+                key="phone-form"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ duration: 0.2 }}
+                onSubmit={otpSent ? handleVerifyOtp : handleSendOtp} 
+                className="space-y-3 absolute inset-0"
+              >
+                {/* Phone */}
+                <div
+                  className={`relative flex items-center gap-3 bg-card border-2 rounded-2xl px-4 h-14 transition-all duration-200 ${
+                    focused === "phone"
+                      ? "border-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.1)]"
+                      : "border-border"
+                  }`}
+                >
+                  <Phone className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${focused === "phone" ? "text-primary" : "text-muted-foreground"}`} />
+                  <input
+                    type="tel"
+                    placeholder="Phone number"
+                    disabled={otpSent}
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    onFocus={() => setFocused("phone")}
+                    onBlur={() => setFocused(null)}
+                    required
+                    className="flex-1 bg-transparent text-sm text-foreground font-medium placeholder:text-muted-foreground/60 outline-none disabled:opacity-50"
+                  />
+                </div>
+
+                {/* OTP Code */}
+                {otpSent && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    className={`relative flex items-center gap-3 bg-card border-2 rounded-2xl px-4 h-14 transition-all duration-200 ${
+                      focused === "otp"
+                        ? "border-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.1)]"
+                        : "border-border"
+                    }`}
+                  >
+                    <KeyRound className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${focused === "otp" ? "text-primary" : "text-muted-foreground"}`} />
+                    <input
+                      type="text"
+                      placeholder="Enter 6-digit OTP"
+                      value={otpCode}
+                      maxLength={6}
+                      onChange={(e) => setOtpCode(e.target.value)}
+                      onFocus={() => setFocused("otp")}
+                      onBlur={() => setFocused(null)}
+                      required
+                      className="flex-1 bg-transparent text-sm text-foreground font-medium tracking-widest placeholder:text-muted-foreground/60 placeholder:tracking-normal outline-none"
+                    />
+                  </motion.div>
+                )}
+
+                {/* Submit Phone */}
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  type="submit"
+                  disabled={loading || (otpSent && otpCode.length < 6)}
+                  className="w-full h-14 bg-primary text-primary-foreground rounded-2xl font-bold text-[15px] shadow-button disabled:opacity-60 mt-2 flex items-center justify-center gap-2"
+                >
+                  {loading && <span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />}
+                  {!loading && (otpSent ? "Verify Security Code" : "Dispatch OTP")}
+                </motion.button>
+                
+                {otpSent && (
+                  <div className="text-center mt-2">
+                    <button type="button" onClick={() => setOtpSent(false)} className="text-xs font-semibold text-primary hover:underline">
+                      Changed your number?
+                    </button>
+                  </div>
+                )}
+              </motion.form>
             )}
-          </motion.button>
-        </form>
+          </AnimatePresence>
+        </div>
 
         {/* Divider */}
-        <div className="relative mb-6">
+        <div className="relative mb-6 mt-12">
           <div className="absolute inset-0 flex items-center">
             <div className="w-full border-t border-border" />
           </div>

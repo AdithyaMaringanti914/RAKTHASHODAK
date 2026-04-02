@@ -1,9 +1,10 @@
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft, Search, Radio, Compass, Bell } from "lucide-react";
 import { motion } from "framer-motion";
 
 const RequestEntryScreen = () => {
   const navigate = useNavigate();
+  const location = useLocation();
 
   return (
     <div className="min-h-screen bg-background max-w-lg mx-auto overflow-x-hidden">
@@ -48,7 +49,7 @@ const RequestEntryScreen = () => {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          onClick={() => navigate("/request-donors")}
+          onClick={() => navigate("/request-donors", { state: location.state })}
           className="w-full text-left p-6 bg-primary/10 hover:bg-primary/15 rounded-3xl border-2 border-primary/20 transition-all flex items-start gap-4 overflow-hidden relative"
         >
           <div className="absolute top-0 left-0 w-32 h-32 bg-primary translate-x-12 -translate-y-12 rounded-full blur-3xl opacity-20 pointer-events-none"></div>

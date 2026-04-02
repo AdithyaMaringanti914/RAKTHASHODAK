@@ -28,7 +28,7 @@ const AlertsScreen = () => {
       // @ts-ignore - assigned_donor_id hasn't been generated in types yet
       .update({ status: "ASSIGNED", assigned_donor_id: user.id })
       .eq("id", requestId)
-      .eq("status", "OPEN")
+      .eq("status", "searching")
       .is("assigned_donor_id", null)
       .select()
       .single();

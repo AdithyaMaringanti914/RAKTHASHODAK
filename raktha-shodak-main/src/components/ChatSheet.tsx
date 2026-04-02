@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Send, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 interface ChatMessage {
   id: string;
@@ -51,7 +52,11 @@ const ChatSheet = ({ requestId, open, onClose }: ChatSheetProps) => {
           filter: `request_id=eq.${requestId}`,
         },
         (payload) => {
-          setMessages((prev) => [...prev, payload.new as ChatMessage]);
+          const newMsg = payload.new as ChatMessage;
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === newMsg.id)) return prev;
+            return [...prev, newMsg];
+          });
         }
       )
       .subscribe();
@@ -70,13 +75,32 @@ const ChatSheet = ({ requestId, open, onClose }: ChatSheetProps) => {
     if (!text.trim() || !user || sending) return;
     setSending(true);
 
-    await supabase.from("chat_messages").insert({
+    const newMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      sender_id: user.id,
+      message: text.trim(),
+      created_at: new Date().toISOString(),
+    };
+
+    // Optimistically add to UI immediately to bypass websocket delays/missing publication flags
+    setMessages((prev) => [...prev, newMsg]);
+    setText("");
+
+    const { error } = await supabase.from("chat_messages").insert({
+      id: newMsg.id,
       request_id: requestId,
       sender_id: user.id,
       message: text.trim(),
+      created_at: newMsg.created_at,
     });
 
-    setText("");
+    if (error) {
+      toast.error("Failed to send message: " + error.message);
+      console.error("Chat insert error:", error);
+      // Revert optimistic update
+      setMessages((prev) => prev.filter((m) => m.id !== newMsg.id));
+    }
+
     setSending(false);
   };
 

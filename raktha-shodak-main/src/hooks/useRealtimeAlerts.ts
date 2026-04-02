@@ -30,7 +30,7 @@ export const useRealtimeAlerts = () => {
       const { data, error } = await supabase
         .from("blood_requests")
         .select("*")
-        .eq("status", "OPEN")
+        .eq("status", "searching")
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -52,7 +52,7 @@ export const useRealtimeAlerts = () => {
             targetLat,
             targetLng
           );
-          return distance <= 15;
+          return distance <= 50000; // Temporarily expanded for global testing
         });
         setRequests(nearbyRequests);
       } else {
@@ -77,7 +77,7 @@ export const useRealtimeAlerts = () => {
           event: "INSERT",
           schema: "public",
           table: "blood_requests",
-          filter: "status=eq.OPEN"
+          filter: "status=eq.searching"
         },
         (payload) => {
           const newRequest = payload.new as BloodRequest;
@@ -92,7 +92,7 @@ export const useRealtimeAlerts = () => {
               targetLng
             );
             
-            if (distance <= 15) {
+            if (distance <= 50000) { // Temporarily expanded for global testing
               setRequests((prev) => [newRequest, ...prev]);
               toast.success(`EMERGENCY: ${newRequest.blood_group} blood needed ${distance.toFixed(1)}km away!`, {
                 duration: 6000,
@@ -115,7 +115,7 @@ export const useRealtimeAlerts = () => {
         },
         (payload) => {
           const updated = payload.new as BloodRequest;
-          if (updated.status !== "OPEN") {
+          if (updated.status !== "searching") {
             // Remove from list if it's no longer open
             setRequests((prev) => prev.filter((r) => r.id !== updated.id));
           } else {

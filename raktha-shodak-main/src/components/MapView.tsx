@@ -10,6 +10,9 @@ interface DonorMarker {
   active?: boolean;
 }
 
+import type { Database } from "@/integrations/supabase/types";
+type BloodRequest = Database["public"]["Tables"]["blood_requests"]["Row"];
+
 interface MapViewProps {
   donors?: DonorMarker[];
   hospitalMarker?: { lat: number; lng: number; name: string };
@@ -19,6 +22,8 @@ interface MapViewProps {
   center?: [number, number];
   zoom?: number;
   className?: string;
+  requests?: BloodRequest[];
+  onRequestClick?: (req: BloodRequest) => void;
 }
 
 const createDonorIcon = (bloodGroup: string, active: boolean) =>
@@ -32,6 +37,20 @@ const createDonorIcon = (bloodGroup: string, active: boolean) =>
     </div>`,
     iconSize: [40, 40],
     iconAnchor: [20, 20],
+  });
+
+const createRequestIcon = (bloodGroup: string) =>
+  L.divIcon({
+    className: "",
+    html: `<div style="position:relative;display:flex;align-items:center;justify-content:center">
+      <div style="position:absolute;width:60px;height:60px;border-radius:50%;background:rgba(198,0,0,0.2);animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite"></div>
+      <div style="position:relative;width:44px;height:44px;border-radius:50%;background:hsl(0,84%,45%);border:3px solid #fff;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 8px 24px rgba(198,0,0,0.5);z-index:20;cursor:pointer;">
+        <span style="font-size:16px;">🩸</span>
+        <span style="font-size:10px;font-weight:900;color:#fff;margin-top:-4px">${bloodGroup}</span>
+      </div>
+    </div>`,
+    iconSize: [60, 60],
+    iconAnchor: [30, 30],
   });
 
 const hospitalIcon = L.divIcon({
@@ -67,6 +86,8 @@ const MapView = ({
   center = [12.975, 77.600],
   zoom = 14,
   className = "",
+  requests = [],
+  onRequestClick,
 }: MapViewProps) => {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -97,11 +118,14 @@ const MapView = ({
     markersRef.current = L.layerGroup().addTo(map);
 
     // Fix grey tiles / partial rendering by invalidating size after mount
-    setTimeout(() => {
-      map.invalidateSize();
+    const timeoutId = setTimeout(() => {
+      if (mapRef.current) {
+        map.invalidateSize();
+      }
     }, 200);
 
     return () => {
+      clearTimeout(timeoutId);
       map.remove();
       mapRef.current = null;
     };
@@ -114,35 +138,62 @@ const MapView = ({
     initialCenterSet.current = true;
   }, [userLocation, zoom]);
 
-  // Update donor markers
+  // Listen for recenter events
+  useEffect(() => {
+    const handleRecenter = (e: Event) => {
+      const customEvent = e as CustomEvent<{ lat: number; lng: number }>;
+      if (mapRef.current && customEvent.detail) {
+        mapRef.current.flyTo([customEvent.detail.lat, customEvent.detail.lng], zoom, { duration: 1 });
+      }
+    };
+    
+    window.addEventListener("recenter-map", handleRecenter);
+    return () => window.removeEventListener("recenter-map", handleRecenter);
+  }, [zoom]);
+
+  // Update donor and request markers
   useEffect(() => {
     if (!markersRef.current) return;
     markersRef.current.clearLayers();
 
     donors.forEach((donor) => {
-      const icon = createDonorIcon(donor.bloodGroup, !!donor.active);
-      L.marker([donor.lat, donor.lng], { icon }).addTo(markersRef.current!);
+      if (typeof donor.lat === "number" && typeof donor.lng === "number") {
+        const icon = createDonorIcon(donor.bloodGroup, !!donor.active);
+        L.marker([donor.lat, donor.lng], { icon }).addTo(markersRef.current!);
+      }
     });
 
-    if (hospitalMarker) {
+    requests.forEach((req) => {
+      const lat = (req as any).latitude || req.hospital_lat;
+      const lng = (req as any).longitude || req.hospital_lng;
+      if (typeof lat === "number" && typeof lng === "number") {
+        const icon = createRequestIcon(req.blood_group);
+        const marker = L.marker([lat, lng], { icon, zIndexOffset: 500 }).addTo(markersRef.current!);
+        if (onRequestClick) {
+          marker.on("click", () => onRequestClick(req));
+        }
+      }
+    });
+
+    if (hospitalMarker && typeof hospitalMarker.lat === "number" && typeof hospitalMarker.lng === "number") {
       L.marker([hospitalMarker.lat, hospitalMarker.lng], { icon: hospitalIcon })
         .bindPopup(`<b>${hospitalMarker.name}</b>`)
         .addTo(markersRef.current);
     }
-  }, [donors, hospitalMarker]);
+  }, [donors, hospitalMarker, requests, onRequestClick]);
 
   // User location marker
   useEffect(() => {
     if (!mapRef.current) return;
 
     if (userMarkerRef.current) {
-      if (userLocation) {
+      if (userLocation && typeof userLocation.lat === "number" && typeof userLocation.lng === "number") {
         userMarkerRef.current.setLatLng([userLocation.lat, userLocation.lng]);
       } else {
         userMarkerRef.current.remove();
         userMarkerRef.current = null;
       }
-    } else if (userLocation) {
+    } else if (userLocation && typeof userLocation.lat === "number" && typeof userLocation.lng === "number") {
       userMarkerRef.current = L.marker([userLocation.lat, userLocation.lng], {
         icon: userLocationIcon,
         zIndexOffset: 1000,
@@ -155,13 +206,13 @@ const MapView = ({
     if (!mapRef.current) return;
 
     if (trackMarkerRef.current) {
-      if (donorTrack) {
+      if (donorTrack && typeof donorTrack.lat === "number" && typeof donorTrack.lng === "number") {
         trackMarkerRef.current.setLatLng([donorTrack.lat, donorTrack.lng]);
       } else {
         trackMarkerRef.current.remove();
         trackMarkerRef.current = null;
       }
-    } else if (donorTrack) {
+    } else if (donorTrack && typeof donorTrack.lat === "number" && typeof donorTrack.lng === "number") {
       trackMarkerRef.current = L.marker([donorTrack.lat, donorTrack.lng], {
         icon: donorTrackIcon,
         zIndexOffset: 900,
@@ -178,7 +229,9 @@ const MapView = ({
       routeRef.current = null;
     }
 
-    if (showRoute && donorTrack && hospitalMarker) {
+    if (showRoute && 
+        donorTrack && typeof donorTrack.lat === "number" && typeof donorTrack.lng === "number" && 
+        hospitalMarker && typeof hospitalMarker.lat === "number" && typeof hospitalMarker.lng === "number") {
       routeRef.current = L.polyline(
         [
           [donorTrack.lat, donorTrack.lng],
