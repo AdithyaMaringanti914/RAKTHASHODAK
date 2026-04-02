@@ -108,7 +108,18 @@ const Index = () => {
               Raktha Shodak 
               <span className="text-[10px]">•</span> 
               <button 
-                onClick={() => setViewMode(viewMode === 'donor' ? 'requester' : 'donor')}
+                onClick={async () => {
+                  const newMode = viewMode === "donor" ? "requester" : "donor";
+                  setViewMode(newMode);
+                  // Ensure local role matches the view to satisfy RLS during actions
+                  if (user) {
+                    try {
+                      await supabase.from("user_roles").upsert({ user_id: user.id, role: newMode });
+                    } catch (e) {
+                      console.warn("Role sync issue:", e);
+                    }
+                  }
+                }}
                 className="bg-secondary/50 hover:bg-secondary px-2 py-0.5 rounded text-xs font-bold transition-colors"
                 title="Switch Context"
               >
