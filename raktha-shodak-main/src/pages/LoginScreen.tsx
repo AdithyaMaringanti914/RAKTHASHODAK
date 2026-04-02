@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mail, Lock, Eye, EyeOff, Phone, KeyRound } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, KeyRound } from "lucide-react";
+import PhoneInput from "@/components/PhoneInput";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
 import { toast } from "sonner";
@@ -34,17 +35,14 @@ const LoginScreen = () => {
     e.preventDefault();
     setLoading(true);
     
-    // Auto-format phone for Twilio requirement
-    const cleanPhone = phone.replace(/[^0-9+]/g, '');
-    const formattedPhone = cleanPhone.startsWith('+') ? cleanPhone : `+91${cleanPhone}`;
-    
-    const { error } = await supabase.auth.signInWithOtp({ phone: formattedPhone });
+    // phone already contains prefix from PhoneInput
+    const { error } = await supabase.auth.signInWithOtp({ phone });
     setLoading(false);
     if (error) {
       toast.error(`OTP Failed: ${error.message}`);
     } else {
       setOtpSent(true);
-      toast.success(`Secure OTP dispatched to ${formattedPhone}!`);
+      toast.success(`Secure OTP dispatched to ${phone}!`);
     }
   };
 
@@ -52,11 +50,8 @@ const LoginScreen = () => {
     e.preventDefault();
     setLoading(true);
     
-    const cleanPhone = phone.replace(/[^0-9+]/g, '');
-    const formattedPhone = cleanPhone.startsWith('+') ? cleanPhone : `+91${cleanPhone}`;
-    
     const { error } = await supabase.auth.verifyOtp({ 
-      phone: formattedPhone, 
+      phone, 
       token: otpCode, 
       type: 'sms' 
     });
@@ -202,26 +197,15 @@ const LoginScreen = () => {
                 className="space-y-3 absolute inset-0"
               >
                 {/* Phone */}
-                <div
-                  className={`relative flex items-center gap-3 bg-card border-2 rounded-2xl px-4 h-14 transition-all duration-200 ${
-                    focused === "phone"
-                      ? "border-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.1)]"
-                      : "border-border"
-                  }`}
-                >
-                  <Phone className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${focused === "phone" ? "text-primary" : "text-muted-foreground"}`} />
-                  <input
-                    type="tel"
-                    placeholder="Phone number"
-                    disabled={otpSent}
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    onFocus={() => setFocused("phone")}
-                    onBlur={() => setFocused(null)}
-                    required
-                    className="flex-1 bg-transparent text-sm text-foreground font-medium placeholder:text-muted-foreground/60 outline-none disabled:opacity-50"
-                  />
-                </div>
+                <PhoneInput
+                  value={phone}
+                  onChange={setPhone}
+                  onFocus={() => setFocused("phone")}
+                  onBlur={() => setFocused(null)}
+                  focused={focused === "phone"}
+                  disabled={otpSent}
+                  required
+                />
 
                 {/* OTP Code */}
                 {otpSent && (

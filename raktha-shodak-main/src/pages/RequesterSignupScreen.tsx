@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, User, Mail, Lock, Phone } from "lucide-react";
+import { ArrowLeft, User, Mail, Lock } from "lucide-react";
+import PhoneInput from "@/components/PhoneInput";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
 import { toast } from "sonner";
@@ -116,18 +117,14 @@ const RequesterSignupScreen = () => {
           />
         </div>
 
-        <div className={inputClass("phone")}>
-          <Phone className={iconClass("phone")} />
-          <input
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            onFocus={() => setFocused("phone")}
-            onBlur={() => setFocused(null)}
-            placeholder="+91 XXXXX XXXXX"
-            className="flex-1 bg-transparent text-sm text-foreground font-medium placeholder:text-muted-foreground/60 outline-none"
-          />
-        </div>
+        <PhoneInput
+          value={phone}
+          onChange={setPhone}
+          onFocus={() => setFocused("phone")}
+          onBlur={() => setFocused(null)}
+          focused={focused === "phone"}
+          required
+        />
 
         <motion.button
           whileTap={{ scale: 0.97 }}

@@ -147,15 +147,17 @@ const DonorBroadcastScreen = () => {
 
       // OVER-THE-TOP AUTOMATED TWILIO SMS ALERTS
       try {
-        const { data: profiles } = await supabase
+        const { data: profiles, error: queryError } = await supabase
           .from("profiles")
           .select("phone, latitude, longitude, blood_group")
           .eq("is_available", true)
-          .not("phone", "is", null); // Diagnostic: Temporary removal of .neq('user_id', user.id) for local "self" testing
+          .eq("blood_group", bloodGroup)
+          .not("phone", "is", null)
+          .neq("phone", ""); 
 
         if (profiles) {
           console.log("WIRING DEBUG: Donor Query Success. Count:", profiles.length);
-          toast.info(`Database Wired: Found ${profiles.length} available phone numbers.`);
+          toast.info(`Found ${profiles.length} matching donors with valid phone numbers.`);
         }
 
         if (profiles && profiles.length > 0) {

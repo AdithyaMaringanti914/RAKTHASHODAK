@@ -38,7 +38,11 @@ const TrackingScreen = () => {
   useEffect(() => {
     if (isDonor || status !== "OPEN") return;
     const fetchNearby = async () => {
-      const { data } = await supabase.from('profiles').select('*').eq('is_available', true);
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('is_available', true)
+        .eq('blood_group', requestData.bloodGroup || "O+");
       if (data) {
         const filtered = data.filter((d: any) => {
           if (!d.latitude || !d.longitude) return false;
