@@ -147,7 +147,14 @@ const DonorBroadcastScreen = () => {
 
       // OVER-THE-TOP AUTOMATED TWILIO SMS ALERTS
       try {
-        const { data: profiles, error: queryError } = await supabase
+        // 1. Diagnostic: Find ANY available donor nearby first (broadest query)
+        const { data: allAvailable } = await supabase
+          .from("profiles")
+          .select("blood_group, phone")
+          .eq("is_available", true);
+
+        // 2. Focused query for exact matches
+        const { data: profiles } = await supabase
           .from("profiles")
           .select("phone, latitude, longitude, blood_group")
           .eq("is_available", true)
@@ -155,9 +162,26 @@ const DonorBroadcastScreen = () => {
           .not("phone", "is", null)
           .neq("phone", ""); 
 
-        if (profiles) {
-          console.log("WIRING DEBUG: Donor Query Success. Count:", profiles.length);
-          toast.info(`Found ${profiles.length} matching donors with valid phone numbers.`);
+        if (allAvailable) {
+          const matchingBlood = allAvailable.filter(p => p.blood_group === bloodGroup).length;
+          const missingPhone = allAvailable.filter(p => p.blood_group === bloodGroup && (!p.phone || p.phone === "")).length;
+          
+          if (profiles && profiles.length > 0) {
+            toast.success(`Broadcasting to ${profiles.length} donors matching ${bloodGroup}!`);
+          } else {
+            if (matchingBlood > 0) {
+              toast.warning(`${matchingBlood} matching donors found, but all are missing phone numbers.`, {
+                description: "Update their profiles with phone numbers to enable SMS alerts."
+              });
+            } else if (allAvailable.length > 0) {
+              const otherGroups = [...new Set(allAvailable.map(p => p.blood_group))].join(", ");
+              toast.info(`Found ${allAvailable.length} donors nearby, but none match ${bloodGroup}.`, {
+                description: `Available groups: ${otherGroups}`
+              });
+            } else {
+              toast.error("No available donors found in the entire database.");
+            }
+          }
         }
 
         if (profiles && profiles.length > 0) {

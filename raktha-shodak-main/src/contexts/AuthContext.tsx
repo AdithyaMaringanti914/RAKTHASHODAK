@@ -33,12 +33,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   const fetchUserData = async (userId: string) => {
-    const [{ data: roles }, { data: prof }] = await Promise.all([
-      supabase.from("user_roles").select("role").eq("user_id", userId),
-      supabase.from("profiles").select("*").eq("user_id", userId).single(),
-    ]);
-    setRole(roles?.[0]?.role ?? null);
-    setProfile(prof ?? null);
+    try {
+      const [{ data: roles }, { data: prof }] = await Promise.all([
+        supabase.from("user_roles").select("role").eq("user_id", userId),
+        supabase.from("profiles").select("*").eq("user_id", userId).single(),
+      ]);
+
+      if (!roles || roles.length === 0) {
+        // Auto-assign default role for OAuth users
+        const defaultRole: AppRole = "donor";
+        try {
+          await supabase.from("user_roles").insert({ user_id: userId, role: defaultRole });
+          setRole(defaultRole);
+        } catch (e) {
+          console.error("Failed to auto-assign role:", e);
+        }
+      } else {
+        setRole(roles?.[0]?.role ?? null);
+      }
+      
+      setProfile(prof ?? null);
+    } catch (err) {
+      console.error("Error fetching user data:", err);
+    }
   };
 
   useEffect(() => {
