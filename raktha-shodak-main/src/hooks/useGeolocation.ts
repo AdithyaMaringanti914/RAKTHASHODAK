@@ -32,6 +32,20 @@ export const useGeolocation = (updateDb = false) => {
 
     setWatching(true);
 
+    // Initial immediate fetch
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        if (!position) setPosition(newPos);
+        updateProfileLocation(newPos.lat, newPos.lng);
+      },
+      (err) => {
+        console.warn("Initial geolocation fetch failed:", err.message);
+        setError(err.message);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const newPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
@@ -40,14 +54,13 @@ export const useGeolocation = (updateDb = false) => {
         updateProfileLocation(newPos.lat, newPos.lng);
       },
       (err) => {
+        console.warn("Geolocation watch error:", err.message);
         setError(err.message);
-        // Fall back to default Bangalore location
-        setPosition({ lat: 12.975, lng: 77.600 });
       },
       {
-        enableHighAccuracy: false,
-        maximumAge: 10000,
-        timeout: 4000,
+        enableHighAccuracy: true,
+        maximumAge: 5000,
+        timeout: 15000,
       }
     );
 
