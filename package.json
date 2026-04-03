@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "homepage": "https://AdithyaMaringanti914.github.io/RedReach.org/",
   "scripts": {
     "dev": "vite --open /login",
     "build": "vite build",
