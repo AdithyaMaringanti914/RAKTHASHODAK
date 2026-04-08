@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "https://AdithyaMaringanti914.github.io/RedReach.org/",
+  "homepage": "https://AdithyaMaringanti914.github.io/RAKTHASHODAK/",
   "scripts": {
     "dev": "vite --open /login",
     "build": "vite build",
@@ -13,7 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "predeploy": "npm run build",
-    "postbuild": "copy dist\\index.html dist\\404.html",
+    "postbuild": "node -e \"require('fs').copyFileSync('dist/index.html','dist/404.html')\"",
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
