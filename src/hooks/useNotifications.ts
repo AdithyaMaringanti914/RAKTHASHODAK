@@ -4,8 +4,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 
 export const useNotifications = () => {
-  const { user, role } = useAuth();
+  const { user, role, profile } = useAuth();
   const navigate = useNavigate();
+  const ALERT_RADIUS_KM = 15;
   const [permission, setPermission] = useState<NotificationPermission>(
     typeof Notification !== "undefined" ? Notification.permission : "default"
   );
@@ -15,7 +16,7 @@ export const useNotifications = () => {
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker
-        .register("/sw.js")
+        .register(`${import.meta.env.BASE_URL}sw.js`)
         .then((reg) => {
           swRegistration.current = reg;
         })
@@ -78,6 +79,24 @@ export const useNotifications = () => {
         },
         (payload) => {
           const req = payload.new as Record<string, unknown>;
+          const requestBloodGroup = String(req.blood_group || "");
+          const requestLat = Number(req.hospital_lat);
+          const requestLng = Number(req.hospital_lng);
+          const donorLat = profile?.latitude;
+          const donorLng = profile?.longitude;
+
+          if (!profile?.blood_group || profile.blood_group !== requestBloodGroup) return;
+
+          if (
+            donorLat != null &&
+            donorLng != null &&
+            Number.isFinite(requestLat) &&
+            Number.isFinite(requestLng)
+          ) {
+            const distanceKm = getDistanceKm(donorLat, donorLng, requestLat, requestLng);
+            if (distanceKm > ALERT_RADIUS_KM) return;
+          }
+
           showNotification(
             `🩸 ${req.blood_group} Blood Needed`,
             `${req.units} unit(s) at ${req.hospital_name} — ${req.urgency} urgency`,
@@ -90,7 +109,21 @@ export const useNotifications = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, role, permission, showNotification]);
+  }, [user, role, permission, showNotification, profile]);
 
   return { permission, requestPermission, showNotification };
 };
+
+function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}

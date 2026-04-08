@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Loader2, Users, Phone } from "lucide-react";
+import { ArrowLeft, Loader2, Users } from "lucide-react";
 import BloodGroupPicker from "@/components/BloodGroupPicker";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { useGeolocation } from "@/hooks/useGeolocation";
 
 const URGENCY_LEVELS = ["Standard", "Urgent", "Critical"];
+const ALERT_RADIUS_KM = 15;
 
 // Helper for distance calculation
 function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -22,88 +23,32 @@ function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Optimized Twilio Dispatch Engine
-const dispatchEmergencyAlert = async (to: string, body: string, voiceMessage?: string) => {
-  const accountSid = import.meta.env.VITE_TWILIO_ACCOUNT_SID;
-  const authToken = import.meta.env.VITE_TWILIO_AUTH_TOKEN;
-  const fromRaw = import.meta.env.VITE_TWILIO_PHONE_NUMBER;
-
-  if (!accountSid || !authToken || !fromRaw) {
-    console.error("Twilio system wiring broken: Missing credentials.");
-    return { success: false, error: "Missing Credentials" };
-  }
-
-  // Force India E.164 protocol for testing consistency
-  const cleanTo = to.replace(/[^0-9+]/g, '');
-  const formattedTo = cleanTo.startsWith('+') ? cleanTo : `+91${cleanTo}`;
-  const authHeader = `Basic ${btoa(`${accountSid}:${authToken}`)}`;
-
-  const results = { sms: false, voice: false };
-
-  // 1. Dispatch SMS
-  try {
-    const data = new URLSearchParams();
-    data.append("To", formattedTo);
-    data.append("From", fromRaw);
-    data.append("Body", body);
-    
-    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
-      method: "POST",
-      headers: { Authorization: authHeader, "Content-Type": "application/x-www-form-urlencoded" },
-      body: data,
-    });
-    results.sms = res.ok;
-    if (!res.ok) console.error("SMS Wiring Failure:", await res.text());
-  } catch (e) {
-    console.error("SMS Dispatch Error:", e);
-  }
-
-  // 2. Dispatch Voice (If voiceMessage provided)
-  if (voiceMessage) {
-    try {
-      const data = new URLSearchParams();
-      data.append("To", formattedTo);
-      data.append("From", fromRaw);
-      data.append("Twiml", `<Response><Say voice="alice" language="en-IN">${voiceMessage}</Say></Response>`);
-      
-      const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Calls.json`, {
-        method: "POST",
-        headers: { Authorization: authHeader, "Content-Type": "application/x-www-form-urlencoded" },
-        body: data,
-      });
-      results.voice = res.ok;
-      if (!res.ok) console.error("Voice Wiring Failure:", await res.text());
-    } catch (e) {
-      console.error("Voice Dispatch Error:", e);
-    }
-  }
-
-  return { success: results.sms || results.voice, results };
-};
-
 const DonorBroadcastScreen = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, role, profile } = useAuth();
+  const { user, profile } = useAuth();
   
   // Tracking requesters coords directly (not tied to a hospital picker anymore)
-  const { position: userLocation, error: geoError } = useGeolocation(true);
-  const isGpsReady = userLocation !== null || geoError !== null;
+  const { position: userLocation } = useGeolocation(true);
 
   const initialGroup = (location.state as any)?.bloodGroup || "O+";
   const [bloodGroup, setBloodGroup] = useState(initialGroup);
   const [units, setUnits] = useState(1);
   const [urgency, setUrgency] = useState("Urgent");
-  const [callDonors, setCallDonors] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Determine a safe payload base (Default to Bangalore target if GPS fails)
-  const safeLat = userLocation?.lat || 12.975;
-  const safeLng = userLocation?.lng || 77.600;
+  // Use live GPS first, then persisted profile coordinates.
+  const requesterLat = userLocation?.lat ?? profile?.latitude ?? null;
+  const requesterLng = userLocation?.lng ?? profile?.longitude ?? null;
+  const hasRequesterLocation = requesterLat != null && requesterLng != null;
 
   const handleSubmit = async () => {
     if (!user) {
       toast.error("Authentication error.");
+      return;
+    }
+    if (!hasRequesterLocation) {
+      toast.error("Location required. Please enable GPS and try again.");
       return;
     }
 
@@ -114,28 +59,30 @@ const DonorBroadcastScreen = () => {
       blood_group: bloodGroup,
       units,
       urgency,
-      status: "searching", // Legacy RLS requirement fallback bypassing missing schema updates
-      
-      // Using legacy structural columns strictly to solve the Supabase "column missing" cache errors securely 
       hospital_name: "Emergency Broadcast Ping",
       hospital_address: "Current Geolocation",
-      hospital_lat: safeLat,
-      hospital_lng: safeLng,
+      hospital_lat: requesterLat,
+      hospital_lng: requesterLng,
     };
 
     try {
-      // 100% Client-side RLS Bypass: Temporarily elevate the current user to 'requester' to satisfy stringent policies.
-      try {
-        await supabase.from("user_roles").insert({ user_id: user.id, role: "requester" });
-      } catch (roleError) {
-        console.warn("Role elevation skipped/failed:", roleError);
-      }
+      const { data: fnData, error: fnError } = await supabase.functions.invoke("requests", {
+        body: payload,
+      });
 
-      const { data, error } = await supabase
-        .from("blood_requests")
-        .insert(payload)
-        .select()
-        .single();
+      let data = fnData;
+      let error = fnError;
+
+      // Fallback: if edge function fails (not deployed/auth issue), try direct insert.
+      if (error) {
+        const fallback = await supabase
+          .from("blood_requests")
+          .insert(payload)
+          .select()
+          .single();
+        data = fallback.data;
+        error = fallback.error;
+      }
 
       setSubmitting(false);
 
@@ -143,94 +90,112 @@ const DonorBroadcastScreen = () => {
         throw error;
       }
 
-      toast.success("Emergency Ping dispatched globally to connected Donors!");
+      toast.success("Emergency request created. Nearby donors are being alerted in stages.");
 
-      // OVER-THE-TOP AUTOMATED TWILIO SMS ALERTS
+      // Stage pipeline:
+      // 0-10s: in-app notifications via realtime insert
+      // 10-20s: SMS via Twilio
+      // 20-30s: voice calls via Twilio
       try {
-        // 1. Diagnostic: Find ANY available donor nearby first (broadest query)
-        const { data: allAvailable } = await supabase
-          .from("profiles")
-          .select("blood_group, phone")
-          .eq("is_available", true);
-
-        // 2. Focused query for exact matches
+        // Query available matching donors who can be reached by phone.
         const { data: profiles } = await supabase
           .from("profiles")
-          .select("phone, latitude, longitude, blood_group")
+          .select("phone, latitude, longitude")
           .eq("is_available", true)
           .eq("blood_group", bloodGroup)
           .not("phone", "is", null)
-          .neq("phone", ""); 
-
-        if (allAvailable) {
-          const matchingBlood = allAvailable.filter(p => p.blood_group === bloodGroup).length;
-          const missingPhone = allAvailable.filter(p => p.blood_group === bloodGroup && (!p.phone || p.phone === "")).length;
-          
-          if (profiles && profiles.length > 0) {
-            toast.success(`Broadcasting to ${profiles.length} donors matching ${bloodGroup}!`);
-          } else {
-            if (matchingBlood > 0) {
-              toast.warning(`${matchingBlood} matching donors found, but all are missing phone numbers.`, {
-                description: "Update their profiles with phone numbers to enable SMS alerts."
-              });
-            } else if (allAvailable.length > 0) {
-              const otherGroups = [...new Set(allAvailable.map(p => p.blood_group))].join(", ");
-              toast.info(`Found ${allAvailable.length} donors nearby, but none match ${bloodGroup}.`, {
-                description: `Available groups: ${otherGroups}`
-              });
-            } else {
-              toast.error("No available donors found in the entire database.");
-            }
-          }
-        }
+          .neq("phone", "");
 
         if (profiles && profiles.length > 0) {
-          const smsLink = `https://www.google.com/maps?q=${safeLat},${safeLng}`;
+          const nearbyProfiles = profiles.filter((p) => {
+            if (p.latitude == null || p.longitude == null) return false;
+            const distance = getDistanceFromLatLonInKm(requesterLat, requesterLng, p.latitude, p.longitude);
+            return distance <= ALERT_RADIUS_KM;
+          });
+
+          if (nearbyProfiles.length === 0) {
+            toast.warning("No nearby donors found within 15 km.");
+          } else {
+            toast.success(
+              `Stage 1 started: App notifications active for ${nearbyProfiles.length} nearby donors (0-10s).`
+            );
+
+            const donorPhones = nearbyProfiles
+              .map((p) => p.phone)
+              .filter((phone): phone is string => Boolean(phone));
+
+            if (donorPhones.length === 0) {
+              toast.warning("Nearby donors found, but none have a valid phone number for SMS/call escalation.");
+            } else {
+          const smsLink = `https://www.google.com/maps?q=${requesterLat},${requesterLng}`;
           const rName = profile?.full_name || "A patient";
           const rPhone = profile?.phone || "Unknown";
           const smsBody = `🚨 Emergency Blood Alert: ${rName} (${rPhone}) needs ${units} unit(s) of ${bloodGroup} blood.\n📍 Map: ${smsLink}`;
-          const voiceMsg = callDonors ? `Critical alert from Raktha Shodak. ${rName} requires ${units} unit of ${bloodGroup} blood. Please assist immediately.` : undefined;
+          const voiceMsg = `Critical alert from Raktha Shodak. ${rName} requires ${units} unit of ${bloodGroup} blood. Please assist immediately.`;
 
-          // Parallelized wiring across all donors
-          const dispatchPromises = profiles
-            .map((p) => {
-              const distance = getDistanceFromLatLonInKm(safeLat, safeLng, p.latitude || 0, p.longitude || 0);
-              if (distance <= 50000) {
-                return dispatchEmergencyAlert(p.phone!, smsBody, voiceMsg);
-              }
-              return null;
-            })
-            .filter(Boolean);
+              setTimeout(() => {
+                void Promise.allSettled(
+                  donorPhones.map((to) =>
+                    supabase.functions.invoke("send-emergency-alert", {
+                      body: { to, body: smsBody, sendSms: true, sendVoice: false },
+                    })
+                  )
+                )
+                  .then((results) => {
+                    const smsSent = results.filter(
+                      (r) => r.status === "fulfilled" && !r.value.error && r.value.data?.success
+                    ).length;
+                    toast.success(`Stage 2 complete: SMS sent to ${smsSent} donor(s).`);
+                  })
+                  .catch((smsErr) => {
+                    console.error("SMS stage failed:", smsErr);
+                    toast.error("Twilio SMS stage failed.");
+                  });
+              }, 10_000);
 
-          if (dispatchPromises.length > 0) {
-            const results = await Promise.allSettled(dispatchPromises);
-            const successful = results.filter(r => r.status === 'fulfilled' && (r.value as any).success).length;
-            toast.success(`Wired Successfully: Dispatched all alerts to ${successful} matching phone lines!`);
-          } else {
-            toast.warning("Wiring Issue: No donors within geographic matching range.");
+              setTimeout(() => {
+                void Promise.allSettled(
+                  donorPhones.map((to) =>
+                    supabase.functions.invoke("send-emergency-alert", {
+                      body: { to, voiceMessage: voiceMsg, sendSms: false, sendVoice: true },
+                    })
+                  )
+                )
+                  .then((results) => {
+                    const callsSent = results.filter(
+                      (r) => r.status === "fulfilled" && !r.value.error && r.value.data?.success
+                    ).length;
+                    toast.success(`Stage 3 complete: Voice calls sent to ${callsSent} donor(s).`);
+                  })
+                  .catch((callErr) => {
+                    console.error("Voice stage failed:", callErr);
+                    toast.error("Twilio voice stage failed.");
+                  });
+              }, 20_000);
+            }
           }
         } else {
-          toast.warning("Wiring Issue: Database returned 0 available phone numbers.");
+          toast.warning("No available matching donors with phone numbers were found.");
         }
-      } catch (wiringError: any) {
+      } catch (wiringError) {
         console.error("Twilio Wiring Critical Failure:", wiringError);
-        toast.error(`Wiring Error: ${wiringError.message}`);
+        toast.error("Wiring Error: Unable to start escalation pipeline.");
       }
 
       navigate("/track", {
         state: {
-          requestId: data.id,
+          requestId: data?.id,
           bloodGroup,
           units,
           urgency,
           hospital: "Local Coordinates",
-          hospitalLat: safeLat,
-          hospitalLng: safeLng,
+          hospitalLat: requesterLat,
+          hospitalLng: requesterLng,
         },
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error("Supabase Insert Error:", err);
-      toast.error(`Failed to broadcast: ${err?.message || JSON.stringify(err)}`);
+      toast.error(`Failed to broadcast: ${String(err)}`);
       setSubmitting(false);
     }
   };
@@ -303,43 +268,26 @@ const DonorBroadcastScreen = () => {
           </div>
         </div>
 
-        {/* Voice Call Toggle */}
-        <div 
-          onClick={() => setCallDonors(!callDonors)}
-          className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${
-            callDonors ? 'border-primary bg-primary/5' : 'border-border bg-card'
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${callDonors ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'}`}>
-               <Phone className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="font-bold text-sm text-foreground">Machine Voice Alerts</p>
-              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Call nearby donors automatically</p>
-            </div>
-          </div>
-          <div className={`w-12 h-6 rounded-full p-1 transition-colors ${callDonors ? 'bg-primary' : 'bg-secondary'}`}>
-            <motion.div 
-               animate={{ x: callDonors ? 24 : 0 }}
-               className="w-4 h-4 bg-white rounded-full shadow-sm"
-            />
-          </div>
+        <div className="p-4 rounded-2xl border border-primary/30 bg-primary/5">
+          <p className="font-bold text-sm text-foreground mb-1">Escalation Pipeline</p>
+          <p className="text-xs text-muted-foreground">
+            0-10s: in-app notifications to nearby donors, 10-20s: Twilio SMS, 20-30s: Twilio voice calls.
+          </p>
         </div>
 
         <motion.button
-          whileTap={isGpsReady ? { scale: 0.97 } : {}}
+          whileTap={hasRequesterLocation ? { scale: 0.97 } : {}}
           onClick={handleSubmit}
-          disabled={submitting || !isGpsReady}
+          disabled={submitting || !hasRequesterLocation}
           className="w-full h-16 bg-primary text-primary-foreground rounded-2xl font-black text-[17px] shadow-button disabled:opacity-60 flex items-center justify-center gap-2 uppercase tracking-widest flex-shrink-0"
         >
           {submitting ? (
             <>
               <Loader2 className="w-6 h-6 animate-spin" /> PINGING...
             </>
-          ) : !isGpsReady ? (
+          ) : !hasRequesterLocation ? (
             <>
-              <Loader2 className="w-5 h-5 animate-spin" /> ACQUIRING GPS LOCK...
+              <Loader2 className="w-5 h-5 animate-spin" /> WAITING FOR LOCATION...
             </>
           ) : (
             "🚨 Broadcast Now"

@@ -24,10 +24,14 @@ export const useFCM = () => {
 
         const permission = await Notification.requestPermission();
         if (permission === "granted") {
-          // You must generate a VAPID Key inside the Firebase Cloud Console -> Project Settings -> Cloud Messaging -> Web Push certificates
+          const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY as string | undefined;
+          if (!vapidKey) {
+            console.warn("FCM disabled: missing VITE_FIREBASE_VAPID_KEY");
+            return;
+          }
+
           const currentToken = await getToken(msg, {
-            // vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY
-            // Replace with your VAPID here for real production testing
+            vapidKey,
           });
 
           if (currentToken) {
@@ -36,7 +40,7 @@ export const useFCM = () => {
             await supabase
               .from("profiles") // Using raw profiles table for compatibility
               .update({ fcm_token: currentToken } as any)
-              .eq("id", user.id);
+              .eq("user_id", user.id);
             console.log("FCM VAPID token secured & synced to DB:", currentToken);
           }
         } else {

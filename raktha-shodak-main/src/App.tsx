@@ -4,7 +4,6 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { useFCM } from "@/hooks/useFCM";
 import BottomNav from "@/components/BottomNav";
 import NotificationPrompt from "@/components/NotificationPrompt";
 import InstallPrompt from "@/components/InstallPrompt";
@@ -62,27 +61,17 @@ const AppRoutes = () => (
   </Routes>
 );
 
-const FCMProvider = ({ children }: { children: React.ReactNode }) => {
-  useFCM();
-  return <>{children}</>;
-};
-
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter
-        basename={import.meta.env.BASE_URL}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
+      <BrowserRouter>
         <AuthProvider>
-          <FCMProvider>
-            <NotificationPrompt />
-            <InstallPrompt />
-            <AppRoutes />
-            <BottomNav />
-          </FCMProvider>
+          <NotificationPrompt />
+          <InstallPrompt />
+          <AppRoutes />
+          <BottomNav />
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

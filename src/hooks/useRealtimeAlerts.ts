@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import type { Database } from "@/integrations/supabase/types";
 
 type BloodRequest = Database["public"]["Tables"]["blood_requests"]["Row"];
+const ALERT_RADIUS_KM = 15;
 
 // Haversine formula to calculate distance between two coordinates in km
 function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -52,7 +53,7 @@ export const useRealtimeAlerts = () => {
             targetLat,
             targetLng
           );
-          return distance <= 50000; // Temporarily expanded for global testing
+          return distance <= ALERT_RADIUS_KM;
         });
         setRequests(nearbyRequests);
       } else {
@@ -92,7 +93,7 @@ export const useRealtimeAlerts = () => {
               targetLng
             );
             
-            if (distance <= 50000) { // Temporarily expanded for global testing
+            if (distance <= ALERT_RADIUS_KM) {
               setRequests((prev) => [newRequest, ...prev]);
               toast.success(`EMERGENCY: ${newRequest.blood_group} blood needed ${distance.toFixed(1)}km away!`, {
                 duration: 6000,

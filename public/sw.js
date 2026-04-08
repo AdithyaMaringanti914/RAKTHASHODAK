@@ -4,11 +4,11 @@ const RUNTIME_CACHE = 'raktha-shodak-runtime';
 
 // App shell files to precache
 const PRECACHE_URLS = [
-  '/',
-  '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/placeholder.svg',
+  './',
+  'manifest.json',
+  'icons/icon-192.png',
+  'icons/icon-512.png',
+  'placeholder.svg',
 ];
 
 // Install: precache app shell
@@ -68,7 +68,7 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
           return response;
         })
-        .catch(() => caches.match('/') || caches.match(request))
+        .catch(() => caches.match('./') || caches.match(request))
     );
     return;
   }
@@ -83,7 +83,7 @@ self.addEventListener('fetch', (event) => {
           caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, clone));
         }
         return response;
-      });
+      }).catch(() => caches.match('./') || Response.error());
     })
   );
 });
@@ -102,8 +102,8 @@ self.addEventListener('push', (event) => {
 
   const options = {
     body: data.body,
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
     vibrate: [200, 100, 200, 100, 200],
     tag: data.tag || 'blood-request',
     renotify: true,
@@ -138,10 +138,11 @@ self.addEventListener('notificationclick', (event) => {
           return;
         }
       }
-      const url = action === 'accept' && requestData?.requestId
-        ? `/alerts?accept=${requestData.requestId}`
-        : '/alerts';
-      return clients.openWindow(url);
+      const relativePath = action === 'accept' && requestData?.requestId
+        ? `alerts?accept=${requestData.requestId}`
+        : "alerts";
+      const targetUrl = new URL(relativePath, self.registration.scope).toString();
+      return clients.openWindow(targetUrl);
     })
   );
 });
@@ -152,8 +153,8 @@ self.addEventListener('message', (event) => {
     const { title, body, tag, data } = event.data;
     self.registration.showNotification(title, {
       body,
-      icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png',
+      icon: 'icons/icon-192.png',
+      badge: 'icons/icon-192.png',
       vibrate: [200, 100, 200, 100, 200],
       tag: tag || 'blood-request',
       renotify: true,

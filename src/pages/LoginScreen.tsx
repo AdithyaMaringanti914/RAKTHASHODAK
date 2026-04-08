@@ -71,6 +71,25 @@ const LoginScreen = () => {
     if (error) toast.error(String(error));
   };
 
+  const handleResendVerification = async () => {
+    if (!email) {
+      toast.error("Enter your email first.");
+      return;
+    }
+
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/login` },
+    });
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Verification email resent. Check inbox/spam.");
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 max-w-lg mx-auto">
       <motion.div
@@ -185,6 +204,13 @@ const LoginScreen = () => {
                 >
                   {loading ? "Signing in…" : "Sign In"}
                 </motion.button>
+                <button
+                  type="button"
+                  onClick={handleResendVerification}
+                  className="w-full text-xs font-semibold text-primary hover:underline pt-1"
+                >
+                  Resend verification email
+                </button>
               </motion.form>
             ) : (
               <motion.form 

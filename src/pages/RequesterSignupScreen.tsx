@@ -19,31 +19,45 @@ const RequesterSignupScreen = () => {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            role: "requester",
+            phone,
+          },
+          emailRedirectTo: `${window.location.origin}/login`,
+        },
+      });
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName },
-        emailRedirectTo: window.location.origin,
-      },
-    });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
 
-    if (error) {
-      toast.error(error.message);
-      setLoading(false);
-      return;
-    }
+      if (!data.user) {
+        toast.error("Signup failed. Please try again.");
+        return;
+      }
 
-    if (data.user) {
+      if (!data.session) {
+        toast.success("Verification email sent. Please verify your email before signing in.");
+        navigate("/login");
+        return;
+      }
+
       await Promise.all([
-        supabase.from("user_roles").insert({ user_id: data.user.id, role: "requester" as const }),
-        supabase.from("profiles").update({ phone }).eq("user_id", data.user.id),
+        supabase.from("user_roles").upsert({ user_id: data.user.id, role: "requester" as const }),
+        supabase.from("profiles").update({ full_name: fullName, phone }).eq("user_id", data.user.id),
       ]);
-      toast.success("Account created! Check your email to verify.");
+      toast.success("Account created successfully.");
       navigate("/");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleGoogleSignup = async () => {

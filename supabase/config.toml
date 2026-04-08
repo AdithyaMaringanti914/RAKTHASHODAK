@@ -5,3 +5,9 @@ verify_jwt = false
 
 [functions.donors-nearby]
 verify_jwt = false
+
+[functions.escalate-emergency-alerts]
+verify_jwt = false
+
+[functions.send-emergency-alert]
+verify_jwt = false
