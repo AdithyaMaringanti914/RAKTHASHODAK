@@ -142,10 +142,23 @@ const DonorBroadcastScreen = () => {
                   )
                 )
                   .then((results) => {
-                    const smsSent = results.filter(
-                      (r) => r.status === "fulfilled" && !r.value.error && r.value.data?.success
-                    ).length;
-                    toast.success(`Stage 2 complete: SMS sent to ${smsSent} donor(s).`);
+                    const fulfilled = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
+                    const smsSent = fulfilled.filter((r) => !r.error && r.data?.success === true).length;
+                    const skipped = fulfilled.filter((r) => !r.error && r.data?.skipped === true).length;
+                    const failed = fulfilled.filter((r) => r.error || (!r.data?.success && !r.data?.skipped)).length;
+                    if (smsSent > 0) {
+                      toast.success(`Stage 2 complete: SMS sent to ${smsSent} donor(s).${skipped > 0 ? ` (${skipped} skipped – not Twilio-verified)` : ""}`);
+                    } else if (skipped > 0 && failed === 0) {
+                      toast.warning(`Stage 2: All ${skipped} donor number(s) are not yet verified on Twilio trial account. Add them at console.twilio.com → Verified Caller IDs.`);
+                    } else {
+                      const firstFailure = fulfilled.find((r) => r.error || (!r.data?.success && !r.data?.skipped));
+                      const details =
+                        firstFailure?.error?.message ||
+                        firstFailure?.data?.errors?.sms ||
+                        firstFailure?.data?.error ||
+                        "Unknown error";
+                      toast.error(`Stage 2 failed: ${details}`);
+                    }
                   })
                   .catch((smsErr) => {
                     console.error("SMS stage failed:", smsErr);
@@ -162,10 +175,23 @@ const DonorBroadcastScreen = () => {
                   )
                 )
                   .then((results) => {
-                    const callsSent = results.filter(
-                      (r) => r.status === "fulfilled" && !r.value.error && r.value.data?.success
-                    ).length;
-                    toast.success(`Stage 3 complete: Voice calls sent to ${callsSent} donor(s).`);
+                    const fulfilled = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
+                    const callsSent = fulfilled.filter((r) => !r.error && r.data?.success === true).length;
+                    const skipped = fulfilled.filter((r) => !r.error && r.data?.skipped === true).length;
+                    const failed = fulfilled.filter((r) => r.error || (!r.data?.success && !r.data?.skipped)).length;
+                    if (callsSent > 0) {
+                      toast.success(`Stage 3 complete: Voice calls sent to ${callsSent} donor(s).${skipped > 0 ? ` (${skipped} skipped – not Twilio-verified)` : ""}`);
+                    } else if (skipped > 0 && failed === 0) {
+                      toast.warning(`Stage 3: All ${skipped} donor number(s) are not yet verified on Twilio trial account. Add them at console.twilio.com → Verified Caller IDs.`);
+                    } else {
+                      const firstFailure = fulfilled.find((r) => r.error || (!r.data?.success && !r.data?.skipped));
+                      const details =
+                        firstFailure?.error?.message ||
+                        firstFailure?.data?.errors?.voice ||
+                        firstFailure?.data?.error ||
+                        "Unknown error";
+                      toast.error(`Stage 3 failed: ${details}`);
+                    }
                   })
                   .catch((callErr) => {
                     console.error("Voice stage failed:", callErr);
