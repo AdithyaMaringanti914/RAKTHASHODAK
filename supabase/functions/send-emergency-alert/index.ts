@@ -1,5 +1,18 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
+// ── Twilio Trial Whitelist ────────────────────────────────────────────────────
+// Only numbers verified in the Twilio console can receive messages on a trial
+// account. Add each number here in E.164 format (+91XXXXXXXXXX for India).
+// Remove this guard (and the VERIFIED_NUMBERS check below) once the Twilio
+// account is upgraded to a paid plan.
+const VERIFIED_NUMBERS = new Set([
+  "+919110531198",
+  "+919701924599",
+  "+917396011662",
+  "+919701383757",
+]);
+// ─────────────────────────────────────────────────────────────────────────────
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -95,7 +108,21 @@ Deno.serve(async (req) => {
     const cleanTo = String(to).replace(/[^0-9+]/g, "");
     const formattedTo = cleanTo.startsWith("+") ? cleanTo : `+91${cleanTo}`;
 
+    // Trial-account guard: skip unverified numbers to avoid Twilio error 21608.
+    if (!VERIFIED_NUMBERS.has(formattedTo)) {
+      console.warn(`Skipping unverified number: ${formattedTo}`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          skipped: true,
+          reason: `${formattedTo} is not in the Twilio-verified whitelist (trial account).`,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const results = { sms: false, voice: false };
+    const errors: { sms?: string; voice?: string } = {};
 
     if (shouldSendSms) {
       try {
@@ -107,6 +134,7 @@ Deno.serve(async (req) => {
         results.sms = true;
       } catch (smsError) {
         console.error("Twilio SMS error:", smsError);
+        errors.sms = smsError instanceof Error ? smsError.message : String(smsError);
       }
     }
 
@@ -120,10 +148,11 @@ Deno.serve(async (req) => {
         results.voice = true;
       } catch (voiceError) {
         console.error("Twilio voice error:", voiceError);
+        errors.voice = voiceError instanceof Error ? voiceError.message : String(voiceError);
       }
     }
 
-    return new Response(JSON.stringify({ success: results.sms || results.voice, results }), {
+    return new Response(JSON.stringify({ success: results.sms || results.voice, results, errors }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {

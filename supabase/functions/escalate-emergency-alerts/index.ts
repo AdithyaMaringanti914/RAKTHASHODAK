@@ -1,5 +1,17 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
+// ── Twilio Trial Whitelist ────────────────────────────────────────────────────
+// Only numbers verified in the Twilio console can receive messages on a trial
+// account. Add each number here in E.164 format (+91XXXXXXXXXX for India).
+// Remove this guard (and the filter below) once the Twilio account is upgraded.
+const VERIFIED_NUMBERS = new Set([
+  "+919110531198",
+  "+919701924599",
+  "+917396011662",
+  "+919701383757",
+]);
+// ─────────────────────────────────────────────────────────────────────────────
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -83,14 +95,34 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Trial-account guard: filter out any number not in the Twilio-verified whitelist.
+    const allFormatted = donorPhones.map(formatIndianPhone);
+    const verifiedPhones = allFormatted.filter((p) => VERIFIED_NUMBERS.has(p));
+    const skippedCount = allFormatted.length - verifiedPhones.length;
+    if (skippedCount > 0) {
+      console.warn(`Skipping ${skippedCount} unverified number(s) (Twilio trial account).`);
+    }
+    if (verifiedPhones.length === 0) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          skipped: true,
+          donorsTargeted: 0,
+          skippedCount,
+          reason: "All donor numbers are unverified on this Twilio trial account.",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Stage 1 is in-app notification via realtime insert already done by blood_requests creation.
     // Keep a dedicated 10-second window before escalating to telephony.
     await sleep(10_000);
 
     const smsResults = await Promise.allSettled(
-      donorPhones.map((phone) =>
+      verifiedPhones.map((phone) =>
         twilioRequest(accountSid, authToken, "Messages", {
-          To: formatIndianPhone(phone),
+          To: phone,
           From: fromNumber,
           Body: smsBody,
         })
@@ -101,9 +133,9 @@ Deno.serve(async (req) => {
     await sleep(10_000);
 
     const voiceResults = await Promise.allSettled(
-      donorPhones.map((phone) =>
+      verifiedPhones.map((phone) =>
         twilioRequest(accountSid, authToken, "Calls", {
-          To: formatIndianPhone(phone),
+          To: phone,
           From: fromNumber,
           Twiml: `<Response><Say voice="alice" language="en-IN">${voiceMessage}</Say></Response>`,
         })
@@ -114,7 +146,8 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        donorsTargeted: donorPhones.length,
+        donorsTargeted: verifiedPhones.length,
+        skippedCount,
         smsSent,
         voiceSent,
       }),
