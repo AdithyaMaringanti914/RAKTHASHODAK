@@ -142,20 +142,25 @@ const DonorBroadcastScreen = () => {
                   )
                 )
                   .then((results) => {
-                    const fulfilled = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
-                    const smsSent = fulfilled.filter((r) => !r.error && r.data?.success === true).length;
-                    const skipped = fulfilled.filter((r) => !r.error && r.data?.skipped === true).length;
-                    const failed = fulfilled.filter((r) => r.error || (!r.data?.success && !r.data?.skipped)).length;
+                    console.log("[Stage 2] raw results:", JSON.stringify(results));
+                    const fulfilled = results.filter((r) => r.status === "fulfilled").map((r) => (r as PromiseFulfilledResult<any>).value);
+                    const rejected  = results.filter((r) => r.status === "rejected").map((r) => (r as PromiseRejectedResult).reason);
+                    const smsSent   = fulfilled.filter((r) => !r.error && r.data?.success === true).length;
+                    const skipped   = fulfilled.filter((r) => !r.error && r.data?.skipped === true).length;
+                    const failed    = fulfilled.filter((r) => r.error || (!r.data?.success && !r.data?.skipped)).length;
                     if (smsSent > 0) {
                       toast.success(`Stage 2 complete: SMS sent to ${smsSent} donor(s).${skipped > 0 ? ` (${skipped} skipped – not Twilio-verified)` : ""}`);
-                    } else if (skipped > 0 && failed === 0) {
+                    } else if (skipped > 0 && failed === 0 && rejected.length === 0) {
                       toast.warning(`Stage 2: All ${skipped} donor number(s) are not yet verified on Twilio trial account. Add them at console.twilio.com → Verified Caller IDs.`);
                     } else {
-                      const firstFailure = fulfilled.find((r) => r.error || (!r.data?.success && !r.data?.skipped));
+                      const firstFulfillFail = fulfilled.find((r) => r.error || (!r.data?.success && !r.data?.skipped));
                       const details =
-                        firstFailure?.error?.message ||
-                        firstFailure?.data?.errors?.sms ||
-                        firstFailure?.data?.error ||
+                        firstFulfillFail?.error?.message ||
+                        firstFulfillFail?.data?.errors?.sms ||
+                        firstFulfillFail?.data?.reason ||
+                        firstFulfillFail?.data?.error ||
+                        (rejected[0] instanceof Error ? rejected[0].message : String(rejected[0] ?? "")) ||
+                        `fulfilled=${results.filter(r=>r.status==="fulfilled").length}, rejected=${rejected.length}` ||
                         "Unknown error";
                       toast.error(`Stage 2 failed: ${details}`);
                     }
@@ -175,20 +180,25 @@ const DonorBroadcastScreen = () => {
                   )
                 )
                   .then((results) => {
-                    const fulfilled = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
-                    const callsSent = fulfilled.filter((r) => !r.error && r.data?.success === true).length;
-                    const skipped = fulfilled.filter((r) => !r.error && r.data?.skipped === true).length;
-                    const failed = fulfilled.filter((r) => r.error || (!r.data?.success && !r.data?.skipped)).length;
+                    console.log("[Stage 3] raw results:", JSON.stringify(results));
+                    const fulfilled  = results.filter((r) => r.status === "fulfilled").map((r) => (r as PromiseFulfilledResult<any>).value);
+                    const rejected   = results.filter((r) => r.status === "rejected").map((r) => (r as PromiseRejectedResult).reason);
+                    const callsSent  = fulfilled.filter((r) => !r.error && r.data?.success === true).length;
+                    const skipped    = fulfilled.filter((r) => !r.error && r.data?.skipped === true).length;
+                    const failed     = fulfilled.filter((r) => r.error || (!r.data?.success && !r.data?.skipped)).length;
                     if (callsSent > 0) {
                       toast.success(`Stage 3 complete: Voice calls sent to ${callsSent} donor(s).${skipped > 0 ? ` (${skipped} skipped – not Twilio-verified)` : ""}`);
-                    } else if (skipped > 0 && failed === 0) {
+                    } else if (skipped > 0 && failed === 0 && rejected.length === 0) {
                       toast.warning(`Stage 3: All ${skipped} donor number(s) are not yet verified on Twilio trial account. Add them at console.twilio.com → Verified Caller IDs.`);
                     } else {
-                      const firstFailure = fulfilled.find((r) => r.error || (!r.data?.success && !r.data?.skipped));
+                      const firstFulfillFail = fulfilled.find((r) => r.error || (!r.data?.success && !r.data?.skipped));
                       const details =
-                        firstFailure?.error?.message ||
-                        firstFailure?.data?.errors?.voice ||
-                        firstFailure?.data?.error ||
+                        firstFulfillFail?.error?.message ||
+                        firstFulfillFail?.data?.errors?.voice ||
+                        firstFulfillFail?.data?.reason ||
+                        firstFulfillFail?.data?.error ||
+                        (rejected[0] instanceof Error ? rejected[0].message : String(rejected[0] ?? "")) ||
+                        `fulfilled=${results.filter(r=>r.status==="fulfilled").length}, rejected=${rejected.length}` ||
                         "Unknown error";
                       toast.error(`Stage 3 failed: ${details}`);
                     }
