@@ -1,16 +1,16 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-// ── Twilio Trial Whitelist ────────────────────────────────────────────────────
-// Only numbers verified in the Twilio console can receive messages on a trial
-// account. Add each number here in E.164 format (+91XXXXXXXXXX for India).
-// Remove this guard (and the filter below) once the Twilio account is upgraded.
-const VERIFIED_NUMBERS = new Set([
-  "+919110531198",
-  "+919701924599",
-  "+917396011662",
-  "+919701383757",
-]);
-// ─────────────────────────────────────────────────────────────────────────────
+/** See send-emergency-alert: TWILIO_VERIFIED_NUMBERS comma-separated E.164; empty/unset = no filter. */
+function getTwilioVerifiedWhitelist(): Set<string> | null {
+  const raw = Deno.env.get("TWILIO_VERIFIED_NUMBERS");
+  if (raw == null || raw.trim() === "") return null;
+  return new Set(
+    raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -95,9 +95,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Trial-account guard: filter out any number not in the Twilio-verified whitelist.
     const allFormatted = donorPhones.map(formatIndianPhone);
-    const verifiedPhones = allFormatted.filter((p) => VERIFIED_NUMBERS.has(p));
+    const verifiedWhitelist = getTwilioVerifiedWhitelist();
+    const verifiedPhones = verifiedWhitelist
+      ? allFormatted.filter((p) => verifiedWhitelist.has(p))
+      : allFormatted;
     const skippedCount = allFormatted.length - verifiedPhones.length;
     if (skippedCount > 0) {
       console.warn(`Skipping ${skippedCount} unverified number(s) (Twilio trial account).`);

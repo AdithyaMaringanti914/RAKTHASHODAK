@@ -97,24 +97,55 @@ const DonorBroadcastScreen = () => {
       // 10-20s: SMS via Twilio
       // 20-30s: voice calls via Twilio
       try {
-        // Query available matching donors who can be reached by phone.
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("phone, latitude, longitude")
-          .eq("is_available", true)
-          .eq("blood_group", bloodGroup)
-          .not("phone", "is", null)
-          .neq("phone", "");
+        const { data: donorRoleRows, error: donorRoleError } = await supabase
+          .from("user_roles")
+          .select("user_id")
+          .eq("role", "donor");
+
+        if (donorRoleError) {
+          console.error("Donor role lookup failed:", donorRoleError);
+          toast.warning("Could not load donor directory. Check database access (user_roles).");
+        }
+
+        const donorIds = donorRoleRows?.map((r) => r.user_id) ?? [];
+
+        if (donorIds.length === 0) {
+          toast.warning("No registered donors found. Donor accounts need the donor role in user_roles.");
+        }
+
+        // Query available matching donors who can be reached by phone (donors only).
+        const { data: profiles } =
+          donorIds.length === 0
+            ? { data: [] as { phone: string | null; latitude: number | null; longitude: number | null }[] }
+            : await supabase
+                .from("profiles")
+                .select("phone, latitude, longitude")
+                .in("user_id", donorIds)
+                .eq("is_available", true)
+                .eq("blood_group", bloodGroup)
+                .not("phone", "is", null)
+                .neq("phone", "");
 
         if (profiles && profiles.length > 0) {
-          const nearbyProfiles = profiles.filter((p) => {
-            if (p.latitude == null || p.longitude == null) return false;
-            const distance = getDistanceFromLatLonInKm(requesterLat, requesterLng, p.latitude, p.longitude);
+          const withLocation = profiles.filter((p) => p.latitude != null && p.longitude != null);
+          const nearbyProfiles = withLocation.filter((p) => {
+            const distance = getDistanceFromLatLonInKm(
+              requesterLat,
+              requesterLng,
+              p.latitude as number,
+              p.longitude as number
+            );
             return distance <= ALERT_RADIUS_KM;
           });
 
           if (nearbyProfiles.length === 0) {
-            toast.warning("No nearby donors found within 15 km.");
+            if (withLocation.length === 0) {
+              toast.warning(
+                `Found ${profiles.length} matching donor(s) with phone, but none have GPS saved. Donors should open the app with location enabled so coordinates sync to their profile.`
+              );
+            } else {
+              toast.warning("No nearby donors found within 15 km.");
+            }
           } else {
             toast.success(
               `Stage 1 started: App notifications active for ${nearbyProfiles.length} nearby donors (0-10s).`
@@ -151,7 +182,9 @@ const DonorBroadcastScreen = () => {
                     if (smsSent > 0) {
                       toast.success(`Stage 2 complete: SMS sent to ${smsSent} donor(s).${skipped > 0 ? ` (${skipped} skipped – not Twilio-verified)` : ""}`);
                     } else if (skipped > 0 && failed === 0 && rejected.length === 0) {
-                      toast.warning(`Stage 2: All ${skipped} donor number(s) are not yet verified on Twilio trial account. Add them at console.twilio.com → Verified Caller IDs.`);
+                      toast.warning(
+                        `Stage 2: All ${skipped} number(s) were skipped. For Twilio trial, add E.164 numbers to the edge secret TWILIO_VERIFIED_NUMBERS (or upgrade Twilio).`
+                      );
                     } else {
                       const firstFulfillFail = fulfilled.find((r) => r.error || (!r.data?.success && !r.data?.skipped));
                       const details =
@@ -189,7 +222,9 @@ const DonorBroadcastScreen = () => {
                     if (callsSent > 0) {
                       toast.success(`Stage 3 complete: Voice calls sent to ${callsSent} donor(s).${skipped > 0 ? ` (${skipped} skipped – not Twilio-verified)` : ""}`);
                     } else if (skipped > 0 && failed === 0 && rejected.length === 0) {
-                      toast.warning(`Stage 3: All ${skipped} donor number(s) are not yet verified on Twilio trial account. Add them at console.twilio.com → Verified Caller IDs.`);
+                      toast.warning(
+                        `Stage 3: All ${skipped} number(s) were skipped. For Twilio trial, set TWILIO_VERIFIED_NUMBERS on send-emergency-alert (or upgrade Twilio).`
+                      );
                     } else {
                       const firstFulfillFail = fulfilled.find((r) => r.error || (!r.data?.success && !r.data?.skipped));
                       const details =

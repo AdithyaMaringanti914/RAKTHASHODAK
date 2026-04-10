@@ -32,8 +32,8 @@ const Index = () => {
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [chatOpen, setChatOpen] = useState(false);
 
-  // Track location and persist to DB if donor
-  const { position } = useGeolocation(role === "donor");
+  // Map position: persist requester coords to profile; donors are synced via DonorLocationSync
+  const { position } = useGeolocation(role === "requester");
 
   // Fetch nearby donors from profiles
   useEffect(() => {

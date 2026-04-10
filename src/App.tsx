@@ -8,6 +8,7 @@ import { useFCM } from "@/hooks/useFCM";
 import BottomNav from "@/components/BottomNav";
 import NotificationPrompt from "@/components/NotificationPrompt";
 import InstallPrompt from "@/components/InstallPrompt";
+import DonorLocationSync from "@/components/DonorLocationSync";
 import Index from "./pages/Index";
 import RequestEntryScreen from "./pages/RequestEntryScreen";
 import HospitalDiscoveryScreen from "./pages/HospitalDiscoveryScreen";
@@ -78,6 +79,7 @@ const App = () => (
       >
         <AuthProvider>
           <FCMProvider>
+            <DonorLocationSync />
             <NotificationPrompt />
             <InstallPrompt />
             <AppRoutes />
