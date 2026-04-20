@@ -83,16 +83,16 @@ const RequesterSignupScreen = () => {
     if (error) toast.error(String(error));
   };
 
-  // ── Step 2a: send OTP ─────────────────────────────────────────────────────
+  // ── Step 2a: send OTP via Supabase Auth ─────────────────────────────────
   const handleSendOtp = async () => {
     if (!phone) { toast.error("Please enter your phone number."); return; }
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("verify-phone", {
-        body: { action: "send", phone },
-      });
-      if (error || !data?.success) {
-        toast.error(data?.error || error?.message || "Failed to send OTP.");
+      const clean = phone.replace(/[^0-9+]/g, "");
+      const formatted = clean.startsWith("+") ? clean : `+91${clean}`;
+      const { error } = await supabase.auth.updateUser({ phone: formatted });
+      if (error) {
+        toast.error(error.message || "Failed to send OTP.");
         return;
       }
       setOtpSent(true);
@@ -107,18 +107,21 @@ const RequesterSignupScreen = () => {
     if (!otp || otp.length < 4) { toast.error("Please enter the full OTP."); return; }
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("verify-phone", {
-        body: { action: "check", phone, code: otp },
+      const clean = phone.replace(/[^0-9+]/g, "");
+      const formatted = clean.startsWith("+") ? clean : `+91${clean}`;
+      const { error } = await supabase.auth.verifyOtp({
+        phone: formatted,
+        token: otp,
+        type: "phone_change",
       });
-      if (error || !data?.success) {
+      if (error) {
         toast.error("Invalid OTP. Please try again.");
         return;
       }
-      const verifiedPhone = data.phone ?? phone;
       if (userId) {
         await supabase
           .from("profiles")
-          .update({ phone: verifiedPhone, phone_verified: true } as any)
+          .update({ phone: formatted, phone_verified: true } as any)
           .eq("user_id", userId);
       }
       setPhoneVerified(true);
