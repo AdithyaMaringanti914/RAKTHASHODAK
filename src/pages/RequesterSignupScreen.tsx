@@ -120,8 +120,7 @@ const RequesterSignupScreen = () => {
       const uid = data.user.id;
       setUserId(uid);
 
-      await supabase.from("user_roles").upsert({ user_id: uid, role: "requester" as const });
-
+      // Trigger handles roles now
       if (!data.session) {
         toast.success("Verification email sent! Your phone is already saved. Please confirm your email then log in.");
         navigate("/login");

@@ -131,8 +131,7 @@ const DonorSignupScreen = () => {
       setUserId(uid);
 
       // The handle_new_user DB trigger will automatically write everything 
-      // from user_metadata (including phone) into the profiles table!
-      await supabase.from("user_roles").upsert({ user_id: uid, role: "donor" as const });
+      // from user_metadata (including phone and role) into the profiles and user_roles tables!
 
       if (!data.session) {
         toast.success("Verification email sent! Your phone number is already saved. Please confirm your email then log in.");
