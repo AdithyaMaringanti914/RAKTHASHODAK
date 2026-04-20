@@ -14,7 +14,7 @@ const formatPhone = (raw: string) => {
 };
 
 const ProfileScreen = () => {
-  const { user, profile, role, signOut, fetchProfile } = useAuth();
+  const { user, profile, role, signOut, refreshProfile } = useAuth();
   const navigate = useNavigate();
 
   // Verification state
@@ -90,7 +90,7 @@ const ProfileScreen = () => {
         
         if (error) throw error;
         
-        await fetchProfile(user.id);
+        await refreshProfile();
         toast.success("Phone verified successfully! ✓");
         setShowVerify(false);
       }
