@@ -104,7 +104,12 @@ const RequesterSignupScreen = () => {
         email,
         password,
         options: {
-          data: { full_name: fullName, role: "requester" },
+          data: { 
+            full_name: fullName, 
+            role: "requester",
+            phone: verifiedPhone || null,
+            phone_verified: !!verifiedPhone
+          },
           emailRedirectTo: `${window.location.origin}/login`,
         },
       });
@@ -115,17 +120,7 @@ const RequesterSignupScreen = () => {
       const uid = data.user.id;
       setUserId(uid);
 
-      await Promise.all([
-        supabase.from("user_roles").upsert({ user_id: uid, role: "requester" as const }),
-        supabase
-          .from("profiles")
-          .update({
-            full_name: fullName,
-            phone: verifiedPhone || null,
-            phone_verified: !!verifiedPhone,
-          } as any)
-          .eq("user_id", uid),
-      ]);
+      await supabase.from("user_roles").upsert({ user_id: uid, role: "requester" as const });
 
       if (!data.session) {
         toast.success("Verification email sent! Your phone is already saved. Please confirm your email then log in.");

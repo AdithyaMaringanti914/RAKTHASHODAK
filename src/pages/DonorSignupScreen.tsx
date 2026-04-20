@@ -113,7 +113,13 @@ const DonorSignupScreen = () => {
         email,
         password,
         options: {
-          data: { full_name: fullName, role: "donor", blood_group: bloodGroup },
+          data: { 
+            full_name: fullName, 
+            role: "donor", 
+            blood_group: bloodGroup,
+            phone: verifiedPhone,
+            phone_verified: true
+          },
           emailRedirectTo: `${window.location.origin}/login`,
         },
       });
@@ -124,19 +130,9 @@ const DonorSignupScreen = () => {
       const uid = data.user.id;
       setUserId(uid);
 
-      // Write all data including verified phone in one go
-      await Promise.all([
-        supabase.from("user_roles").upsert({ user_id: uid, role: "donor" as const }),
-        supabase
-          .from("profiles")
-          .update({
-            full_name: fullName,
-            blood_group: bloodGroup,
-            phone: verifiedPhone,
-            phone_verified: true,
-          } as any)
-          .eq("user_id", uid),
-      ]);
+      // The handle_new_user DB trigger will automatically write everything 
+      // from user_metadata (including phone) into the profiles table!
+      await supabase.from("user_roles").upsert({ user_id: uid, role: "donor" as const });
 
       if (!data.session) {
         toast.success("Verification email sent! Your phone number is already saved. Please confirm your email then log in.");
