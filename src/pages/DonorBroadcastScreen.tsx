@@ -85,29 +85,27 @@ const DonorBroadcastScreen = () => {
       // 10-20s: SMS via Twilio
       // 20-30s: voice calls via Twilio
       try {
-        const { data: nearbyDonors, error: nearbyError } = await supabase.functions.invoke(
-          `donors-nearby?blood_group=${encodeURIComponent(bloodGroup)}&lat=${requesterLat}&lng=${requesterLng}`,
-          { method: "GET" }
-        );
+        // Fetch donors matching blood group directly via client (identical to TrackingScreen)
+        const { data: profiles, error: profilesError } = await supabase
+          .from("profiles")
+          .select("*, user_roles!inner(role)")
+          .eq("is_available", true)
+          .eq("blood_group", bloodGroup)
+          .eq("user_roles.role", "donor");
 
-        if (nearbyError) {
-          console.error("Nearby lookup error:", nearbyError);
-          alert(`API Error: ${JSON.stringify(nearbyError)}`);
-          toast.warning("Could not load nearby donor directory.");
+        if (profilesError) {
+          console.error("Donor lookup error:", profilesError);
+          toast.warning("Error fetching donor directory.");
         }
+
+        const nearbyDonors = profiles || [];
         
-        if (Array.isArray(nearbyDonors) && nearbyDonors.length === 0) {
-           alert("API returned exactly 0 donors. Meaning the database successfully answered but found absolutely no one matching the filters (role=donor, is_available=true, blood_group=" + bloodGroup + ").");
-        } else if (!Array.isArray(nearbyDonors)) {
-           alert(`API returned a non-array response: ${JSON.stringify(nearbyDonors)}`);
-        }
-
-        const donorsWithinRadius = Array.isArray(nearbyDonors)
-          ? nearbyDonors.filter((d: any) => {
-              const dist = Number(d?.distance_km);
-              return Number.isFinite(dist) && dist <= ALERT_RADIUS_KM;
-            })
-          : [];
+        // Exact same calculation as TrackingScreen
+        const donorsWithinRadius = nearbyDonors.filter((d: any) => {
+          if (!d.latitude || !d.longitude) return true; // Include donors prioritizing their availability if GPS missing
+          const dist = Math.sqrt(Math.pow(d.latitude - requesterLat, 2) + Math.pow(d.longitude - requesterLng, 2)) * 111;
+          return dist <= ALERT_RADIUS_KM;
+        });
 
         if (donorsWithinRadius.length === 0) {
           toast.warning("No nearby donors found within 15 km.");
