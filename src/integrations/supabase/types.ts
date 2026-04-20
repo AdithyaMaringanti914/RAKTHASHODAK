@@ -191,6 +191,7 @@ export type Database = {
           latitude: number | null
           longitude: number | null
           phone: string | null
+          phone_verified: boolean
           reliability_score: number
           total_donations: number
           updated_at: string
@@ -207,6 +208,7 @@ export type Database = {
           latitude?: number | null
           longitude?: number | null
           phone?: string | null
+          phone_verified?: boolean
           reliability_score?: number
           total_donations?: number
           updated_at?: string
@@ -223,6 +225,7 @@ export type Database = {
           latitude?: number | null
           longitude?: number | null
           phone?: string | null
+          phone_verified?: boolean
           reliability_score?: number
           total_donations?: number
           updated_at?: string

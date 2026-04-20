@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
     // Find donors with matching blood group who are available
     let query = supabase
       .from("profiles")
-      .select("user_id, full_name, blood_group, latitude, longitude, total_donations, reliability_score, is_available")
+      .select("user_id, full_name, phone, blood_group, latitude, longitude, total_donations, reliability_score, is_available")
       .eq("is_available", true);
 
     if (bloodGroup) {

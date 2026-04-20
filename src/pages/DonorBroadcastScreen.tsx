@@ -11,18 +11,6 @@ import { useGeolocation } from "@/hooks/useGeolocation";
 const URGENCY_LEVELS = ["Standard", "Urgent", "Critical"];
 const ALERT_RADIUS_KM = 15;
 
-// Helper for distance calculation
-function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
 const DonorBroadcastScreen = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -97,67 +85,41 @@ const DonorBroadcastScreen = () => {
       // 10-20s: SMS via Twilio
       // 20-30s: voice calls via Twilio
       try {
-        const { data: donorRoleRows, error: donorRoleError } = await supabase
-          .from("user_roles")
-          .select("user_id")
-          .eq("role", "donor");
+        const { data: nearbyDonors, error: nearbyError } = await supabase.functions.invoke(
+          `donors-nearby?blood_group=${encodeURIComponent(bloodGroup)}&lat=${requesterLat}&lng=${requesterLng}`,
+          { method: "GET" }
+        );
 
-        if (donorRoleError) {
-          console.error("Donor role lookup failed:", donorRoleError);
-          toast.warning("Could not load donor directory. Check database access (user_roles).");
+        if (nearbyError) {
+          console.error("Nearby donor lookup failed:", nearbyError);
+          toast.warning("Could not load nearby donor directory.");
         }
 
-        const donorIds = donorRoleRows?.map((r) => r.user_id) ?? [];
+        const donorsWithinRadius = Array.isArray(nearbyDonors)
+          ? nearbyDonors.filter((d: any) => {
+              const dist = Number(d?.distance_km);
+              return Number.isFinite(dist) && dist <= ALERT_RADIUS_KM;
+            })
+          : [];
 
-        if (donorIds.length === 0) {
-          toast.warning("No registered donors found. Donor accounts need the donor role in user_roles.");
-        }
+        if (donorsWithinRadius.length === 0) {
+          toast.warning("No nearby donors found within 15 km.");
+        } else {
+          toast.success(
+            `Stage 1 started: App notifications active for ${donorsWithinRadius.length} nearby donors (0-10s).`
+          );
 
-        // Query available matching donors who can be reached by phone (donors only).
-        const { data: profiles } =
-          donorIds.length === 0
-            ? { data: [] as { phone: string | null; latitude: number | null; longitude: number | null }[] }
-            : await supabase
-                .from("profiles")
-                .select("phone, latitude, longitude")
-                .in("user_id", donorIds)
-                .eq("is_available", true)
-                .eq("blood_group", bloodGroup)
-                .not("phone", "is", null)
-                .neq("phone", "");
+          const donorPhones = Array.from(
+            new Set(
+              donorsWithinRadius
+                .map((d: any) => d?.phone)
+                .filter((phone: unknown): phone is string => typeof phone === "string" && phone.trim().length > 0)
+            )
+          );
 
-        if (profiles && profiles.length > 0) {
-          const withLocation = profiles.filter((p) => p.latitude != null && p.longitude != null);
-          const nearbyProfiles = withLocation.filter((p) => {
-            const distance = getDistanceFromLatLonInKm(
-              requesterLat,
-              requesterLng,
-              p.latitude as number,
-              p.longitude as number
-            );
-            return distance <= ALERT_RADIUS_KM;
-          });
-
-          if (nearbyProfiles.length === 0) {
-            if (withLocation.length === 0) {
-              toast.warning(
-                `Found ${profiles.length} matching donor(s) with phone, but none have GPS saved. Donors should open the app with location enabled so coordinates sync to their profile.`
-              );
-            } else {
-              toast.warning("No nearby donors found within 15 km.");
-            }
+          if (donorPhones.length === 0) {
+            toast.warning("Nearby donors found, but none have a valid phone number for SMS escalation.");
           } else {
-            toast.success(
-              `Stage 1 started: App notifications active for ${nearbyProfiles.length} nearby donors (0-10s).`
-            );
-
-            const donorPhones = nearbyProfiles
-              .map((p) => p.phone)
-              .filter((phone): phone is string => Boolean(phone));
-
-            if (donorPhones.length === 0) {
-              toast.warning("Nearby donors found, but none have a valid phone number for SMS/call escalation.");
-            } else {
           const smsLink = `https://www.google.com/maps?q=${requesterLat},${requesterLng}`;
           const rName = profile?.full_name || "A patient";
           const rPhone = profile?.phone || "Unknown";
@@ -180,7 +142,7 @@ const DonorBroadcastScreen = () => {
                     const skipped   = fulfilled.filter((r) => !r.error && r.data?.skipped === true).length;
                     const failed    = fulfilled.filter((r) => r.error || (!r.data?.success && !r.data?.skipped)).length;
                     if (smsSent > 0) {
-                      toast.success(`Stage 2 complete: SMS sent to ${smsSent} donor(s).${skipped > 0 ? ` (${skipped} skipped – not Twilio-verified)` : ""}`);
+                      toast.success(`Stage 2 complete: SMS sent to ${smsSent} nearby donor(s).${skipped > 0 ? ` (${skipped} skipped – not Twilio-verified)` : ""}`);
                     } else if (skipped > 0 && failed === 0 && rejected.length === 0) {
                       toast.warning(
                         `Stage 2: All ${skipped} number(s) were skipped. For Twilio trial, add E.164 numbers to the edge secret TWILIO_VERIFIED_NUMBERS (or upgrade Twilio).`
@@ -243,10 +205,7 @@ const DonorBroadcastScreen = () => {
                     toast.error("Twilio voice stage failed.");
                   });
               }, 20_000);
-            }
           }
-        } else {
-          toast.warning("No available matching donors with phone numbers were found.");
         }
       } catch (wiringError) {
         console.error("Twilio Wiring Critical Failure:", wiringError);
