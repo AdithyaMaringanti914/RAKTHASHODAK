@@ -91,8 +91,15 @@ const DonorBroadcastScreen = () => {
         );
 
         if (nearbyError) {
-          console.error("Nearby donor lookup failed:", nearbyError);
+          console.error("Nearby lookup error:", nearbyError);
+          alert(`API Error: ${JSON.stringify(nearbyError)}`);
           toast.warning("Could not load nearby donor directory.");
+        }
+        
+        if (Array.isArray(nearbyDonors) && nearbyDonors.length === 0) {
+           alert("API returned exactly 0 donors. Meaning the database successfully answered but found absolutely no one matching the filters (role=donor, is_available=true, blood_group=" + bloodGroup + ").");
+        } else if (!Array.isArray(nearbyDonors)) {
+           alert(`API returned a non-array response: ${JSON.stringify(nearbyDonors)}`);
         }
 
         const donorsWithinRadius = Array.isArray(nearbyDonors)
