@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { to, body, voiceMessage, sendSms, sendVoice } = await req.json();
+    const { to, body, voiceMessage, voiceMessageHi, voiceMessageTe, sendSms, sendVoice } = await req.json();
     const shouldSendSms = sendSms === undefined ? true : Boolean(sendSms);
     const shouldSendVoice = sendVoice === undefined ? Boolean(voiceMessage) : Boolean(sendVoice);
 
@@ -143,10 +143,18 @@ Deno.serve(async (req) => {
 
     if (shouldSendVoice) {
       try {
+        let twiml = "<Response>";
+        if (voiceMessage) twiml += `<Say language="en-IN">${String(voiceMessage)}</Say>`;
+        if (voiceMessageHi) twiml += `<Say language="hi-IN">${String(voiceMessageHi)}</Say>`;
+        if (voiceMessageTe) twiml += `<Say language="te-IN">${String(voiceMessageTe)}</Say>`;
+        // Fallback if none provided
+        if (!voiceMessage && !voiceMessageHi && !voiceMessageTe) twiml += '<Say language="en-IN">Emergency Blood Alert. Please check your Raktha Shodak app.</Say>';
+        twiml += "</Response>";
+
         await twilioRequest(accountSid, authToken, "Calls", {
           To: formattedTo,
           From: fromNumber,
-          Twiml: `<Response><Say voice="alice" language="en-IN">${String(voiceMessage)}</Say></Response>`,
+          Twiml: twiml,
         });
         results.voice = true;
       } catch (voiceError) {

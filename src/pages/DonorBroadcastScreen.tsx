@@ -128,7 +128,10 @@ const DonorBroadcastScreen = () => {
           const rName = profile?.full_name || "A patient";
           const rPhone = profile?.phone || "Unknown";
           const smsBody = `🚨 Emergency Blood Alert: ${rName} (${rPhone}) needs ${units} unit(s) of ${bloodGroup} blood.\n📍 Map: ${smsLink}`;
-          const voiceMsg = `Critical alert from Raktha Shodak. ${rName} requires ${units} unit of ${bloodGroup} blood. Please assist immediately.`;
+          
+          const voiceMsgEn = `Critical alert from Raktha Shodak. ${rName} requires ${units} unit of ${bloodGroup} blood. Please assist immediately.`;
+          const voiceMsgHi = `रक्त शोधक से आपातकालीन अलर्ट। ${rName} को ${units} यूनिट ${bloodGroup} रक्त की तुरंत आवश्यकता है। कृपया तुरंत सहायता करें।`;
+          const voiceMsgTe = `రక్త శోధక్ నుండి అత్యవసర అలర్ట్. ${rName} కు ${units} యూనిట్ల ${bloodGroup} రక్తం వెంటనే కావాలి. దయచేసి వెంటనే సహాయం చేయండి.`;
 
               setTimeout(() => {
                 void Promise.allSettled(
@@ -174,7 +177,14 @@ const DonorBroadcastScreen = () => {
                 void Promise.allSettled(
                   donorPhones.map((to) =>
                     supabase.functions.invoke("send-emergency-alert", {
-                      body: { to, voiceMessage: voiceMsg, sendSms: false, sendVoice: true },
+                      body: { 
+                        to, 
+                        voiceMessage: voiceMsgEn, 
+                        voiceMessageHi: voiceMsgHi,
+                        voiceMessageTe: voiceMsgTe,
+                        sendSms: false, 
+                        sendVoice: true 
+                      },
                     })
                   )
                 )
