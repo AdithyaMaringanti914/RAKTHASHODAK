@@ -85,7 +85,13 @@ const ProfileScreen = () => {
       if (user) {
         const { error } = await supabase
           .from("profiles")
-          .update({ phone: formatted, phone_verified: true } as any)
+          .upsert({ 
+            user_id: user.id,
+            phone: formatted, 
+            phone_verified: true,
+            full_name: profile?.full_name || user.user_metadata?.full_name || "User",
+            blood_group: profile?.blood_group || user.user_metadata?.blood_group || null
+          })
           .eq("user_id", user.id);
         
         if (error) throw error;
