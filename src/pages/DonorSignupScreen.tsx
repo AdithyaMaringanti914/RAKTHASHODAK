@@ -75,6 +75,14 @@ const DonorSignupScreen = () => {
           .eq("user_id", data.user.id),
       ]);
 
+      if (!data.session) {
+        // Email confirmation is enabled — user must verify email before they can set a phone
+        toast.success("Verification email sent! Please check your inbox, then log in to complete phone setup.");
+        navigate("/login");
+        return;
+      }
+
+      // Session exists — proceed directly to phone verification
       toast.success("Account created! Now verify your phone number.");
       setStep("verify_phone");
     } finally {

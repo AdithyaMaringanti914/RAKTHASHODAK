@@ -69,6 +69,14 @@ const RequesterSignupScreen = () => {
         supabase.from("profiles").update({ full_name: fullName }).eq("user_id", data.user.id),
       ]);
 
+      if (!data.session) {
+        // Email confirmation enabled — redirect to login
+        toast.success("Verification email sent! Please check your inbox, then log in to complete phone setup.");
+        navigate("/login");
+        return;
+      }
+
+      // Session exists — proceed to phone verification
       toast.success("Account created! Now verify your phone number.");
       setStep("verify_phone");
     } finally {
