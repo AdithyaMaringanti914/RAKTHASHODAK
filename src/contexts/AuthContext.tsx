@@ -12,6 +12,7 @@ interface AuthContextType {
   profile: Database["public"]["Tables"]["profiles"]["Row"] | null;
   loading: boolean;
   signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -21,16 +22,37 @@ const AuthContext = createContext<AuthContextType>({
   profile: null,
   loading: true,
   signOut: async () => {},
+  refreshProfile: async () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
 
+/** Silently update the user's lat/lng in their profile using the browser GPS. */
+const updateLocationInBackground = async (userId: string) => {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      try {
+        await supabase
+          .from("profiles")
+          .update({ latitude: pos.coords.latitude, longitude: pos.coords.longitude })
+          .eq("user_id", userId);
+        console.log("[Location] Updated:", pos.coords.latitude, pos.coords.longitude);
+      } catch (err) {
+        console.warn("[Location] Failed to update:", err);
+      }
+    },
+    (err) => console.warn("[Location] Permission denied or unavailable:", err.message),
+    { timeout: 10000, maximumAge: 60_000 }
+  );
+};
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  const [role, setRole] = useState<AppRole | null>(null);
-  const [profile, setProfile] = useState<Database["public"]["Tables"]["profiles"]["Row"] | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [session, setSession]   = useState<Session | null>(null);
+  const [user, setUser]         = useState<User | null>(null);
+  const [role, setRole]         = useState<AppRole | null>(null);
+  const [profile, setProfile]   = useState<Database["public"]["Tables"]["profiles"]["Row"] | null>(null);
+  const [loading, setLoading]   = useState(true);
 
   const fetchUserData = async (userId: string) => {
     try {
@@ -42,26 +64,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (roles && roles.length > 0) {
         setRole(roles[0].role);
       } else {
-        // Fallback for new/Google users
+        // New user — assign default donor role
         const defaultRole: AppRole = "donor";
         await supabase.from("user_roles").insert({ user_id: userId, role: defaultRole });
         setRole(defaultRole);
       }
-      
+
       setProfile(prof ?? null);
 
-      // Perform "Self-Healing": If important fields are missing, try to fill them
-      if (prof && (!prof.phone || !prof.blood_group)) {
-        console.log("Self-healing profile for user:", userId);
-        const updates: any = {};
-        if (!prof.phone) updates.phone = "+919876543210"; // Placeholder test number
-        if (!prof.blood_group) updates.blood_group = "O+"; // Default type
-        await supabase.from("profiles").update(updates).eq("user_id", userId);
-        setProfile({ ...prof, ...updates });
-      }
+      // ── Dynamic location update ──────────────────────────────────────────
+      // Update location every time the user opens / returns to the app.
+      // This replaces the need to store a static lat/lng at signup.
+      updateLocationInBackground(userId);
     } catch (err) {
       console.error("Error fetching user data:", err);
     }
+  };
+
+  const refreshProfile = async () => {
+    if (!user) return;
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("user_id", user.id)
+      .single();
+    setProfile(prof ?? null);
   };
 
   useEffect(() => {
@@ -70,7 +97,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          // Use setTimeout to avoid Supabase deadlock
+          // Use setTimeout to avoid Supabase internal deadlock
           setTimeout(() => fetchUserData(session.user.id), 0);
         } else {
           setRole(null);
@@ -92,6 +119,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => subscription.unsubscribe();
   }, []);
 
+  // ── Re-update location when the user comes back to the browser tab ────────
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && user) {
+        updateLocationInBackground(user.id);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [user]);
+
   const signOut = async () => {
     await supabase.auth.signOut();
     setSession(null);
@@ -101,7 +139,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ session, user, role, profile, loading, signOut }}>
+    <AuthContext.Provider value={{ session, user, role, profile, loading, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
