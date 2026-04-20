@@ -88,10 +88,9 @@ const DonorBroadcastScreen = () => {
         // Fetch donors matching blood group directly via client (identical to TrackingScreen)
         const { data: profiles, error: profilesError } = await supabase
           .from("profiles")
-          .select("*, user_roles!inner(role)")
+          .select("*")
           .eq("is_available", true)
-          .eq("blood_group", bloodGroup)
-          .eq("user_roles.role", "donor");
+          .eq("blood_group", bloodGroup);
 
         if (profilesError) {
           console.error("Donor lookup error:", profilesError);
