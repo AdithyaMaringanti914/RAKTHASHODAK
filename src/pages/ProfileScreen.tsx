@@ -193,10 +193,11 @@ const ProfileScreen = () => {
         </div>
       </div>
 
-      {/* Verification Modal */}
+    {/* Verification Modal */}
       <AnimatePresence>
         {showVerify && (
           <motion.div 
+            key="verify-modal"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -286,9 +287,9 @@ const ProfileScreen = () => {
         <div className="bg-card rounded-2xl shadow-card overflow-hidden">
           {[
             { label: "Donation History", action: () => navigate("/donation-history") },
-            { label: "Medical Info", action: undefined },
-            { label: "Notification Preferences", action: undefined },
-            { label: "Help & Support", action: undefined },
+            { label: "Medical Info", action: () => {} },
+            { label: "Notification Preferences", action: () => {} },
+            { label: "Help & Support", action: () => {} },
           ].map((item, i) => (
             <button
               key={item.label}
