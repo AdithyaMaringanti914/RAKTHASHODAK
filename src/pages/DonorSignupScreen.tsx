@@ -26,10 +26,11 @@ const DonorSignupScreen = () => {
   const [bloodGroup, setBloodGroup] = useState("O+");
 
   // step 2
-  const [phone, setPhone]               = useState("");
-  const [otpSent, setOtpSent]           = useState(false);
-  const [otp, setOtp]                   = useState("");
-  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [phone, setPhone]                   = useState("");
+  const [verifiedPhone, setVerifiedPhone]   = useState("");  // E.164 after send
+  const [otpSent, setOtpSent]               = useState(false);
+  const [otp, setOtp]                       = useState("");
+  const [phoneVerified, setPhoneVerified]   = useState(false);
 
   // shared
   const [userId, setUserId]   = useState<string | null>(null);
@@ -97,52 +98,98 @@ const DonorSignupScreen = () => {
     if (error) toast.error(String(error));
   };
 
-  // ── Step 2a: send OTP via Supabase Auth ─────────────────────────────────
+  // ── Step 2a: generate OTP, store in DB, send via SMS ────────────────────
   const handleSendOtp = async () => {
-    if (!phone) { toast.error("Please enter your phone number."); return; }
+    if (!phone || !userId) { toast.error("Please enter your phone number."); return; }
     setLoading(true);
     try {
       // Format to E.164
       const clean = phone.replace(/[^0-9+]/g, "");
       const formatted = clean.startsWith("+") ? clean : `+91${clean}`;
 
-      // supabase.auth.updateUser({ phone }) sends an OTP via the configured SMS provider
-      const { error } = await supabase.auth.updateUser({ phone: formatted });
-      if (error) {
-        toast.error(error.message || "Failed to send OTP.");
+      // Generate cryptographically random 6-digit OTP
+      const raw = crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000;
+      const generatedOtp = String(raw).padStart(6, "0");
+
+      // Delete any old challenge for this user first
+      await supabase.from("otp_challenges").delete().eq("user_id", userId);
+
+      // Store the new OTP challenge in the DB (protected by RLS)
+      const { error: storeErr } = await supabase.from("otp_challenges").insert({
+        user_id: userId,
+        phone: formatted,
+        otp: generatedOtp,
+        expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 min
+      });
+
+      if (storeErr) {
+        console.error("OTP store error:", storeErr);
+        toast.error("Could not create OTP challenge. Is the otp_challenges table created?");
         return;
       }
+
+      // Send OTP via the already-deployed send-emergency-alert SMS function
+      const smsBody = `🔐 Raktha Shodak code: ${generatedOtp}. Valid 10 min. Do NOT share.`;
+      const { data: smsData, error: smsErr } = await supabase.functions.invoke(
+        "send-emergency-alert",
+        { body: { to: formatted, body: smsBody, sendSms: true, sendVoice: false } }
+      );
+
+      if (smsErr) {
+        toast.error("SMS failed: " + smsErr.message);
+        return;
+      }
+      if (smsData?.skipped) {
+        toast.error(`⚠️ Your number (${formatted}) is not Twilio-verified. Add it in Twilio Console first.`);
+        return;
+      }
+
+      setVerifiedPhone(formatted);
       setOtpSent(true);
-      toast.success("OTP sent to your phone!");
+      toast.success(`OTP sent to ${formatted}!`);
     } finally {
       setLoading(false);
     }
   };
 
-  // ── Step 2b: verify OTP ───────────────────────────────────────────────────
+  // ── Step 2b: compare OTP against DB, save verified phone ──────────────────
   const handleVerifyOtp = async () => {
-    if (!otp || otp.length < 4) { toast.error("Please enter the full OTP."); return; }
+    if (!otp || otp.length !== 6 || !userId) { toast.error("Enter the 6-digit OTP."); return; }
     setLoading(true);
     try {
-      const clean = phone.replace(/[^0-9+]/g, "");
-      const formatted = clean.startsWith("+") ? clean : `+91${clean}`;
+      // Fetch the active challenge for this user
+      const { data: challenge, error: fetchErr } = await supabase
+        .from("otp_challenges")
+        .select("id, otp, phone")
+        .eq("user_id", userId)
+        .eq("used", false)
+        .gt("expires_at", new Date().toISOString())
+        .maybeSingle();
 
-      const { error } = await supabase.auth.verifyOtp({
-        phone: formatted,
-        token: otp,
-        type: "phone_change",
-      });
-      if (error) {
-        toast.error("Invalid OTP. Please try again.");
+      if (fetchErr || !challenge) {
+        toast.error("OTP expired or not found. Please request a new code.");
         return;
       }
-      // Save verified phone to profile
-      if (userId) {
-        await supabase
-          .from("profiles")
-          .update({ phone: formatted, phone_verified: true } as any)
-          .eq("user_id", userId);
+
+      if (challenge.otp !== otp.trim()) {
+        toast.error("Incorrect OTP. Please try again.");
+        return;
       }
+
+      // Mark challenge as used
+      await supabase.from("otp_challenges").update({ used: true }).eq("id", challenge.id);
+
+      // Save verified phone to profile
+      const { error: profileErr } = await supabase
+        .from("profiles")
+        .update({ phone: challenge.phone, phone_verified: true } as any)
+        .eq("user_id", userId);
+
+      if (profileErr) {
+        console.error("Profile update error:", profileErr);
+        // Non-fatal — still mark verified in UI
+      }
+
       setPhoneVerified(true);
       toast.success("Phone verified! ✓");
       setTimeout(() => setStep("location"), 1200);
