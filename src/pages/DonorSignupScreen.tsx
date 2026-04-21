@@ -79,6 +79,10 @@ const DonorSignupScreen = () => {
       );
 
       if (smsErr) { toast.error("SMS error: " + smsErr.message); return; }
+      if (smsData?.errors?.sms) {
+        toast.error(`Twilio System Error: ${smsData.errors.sms}`);
+        return;
+      }
       if (smsData?.skipped) {
         toast.error(`⚠️ ${formatted} is not Twilio-verified. Add it in Twilio Console → Verified Caller IDs.`);
         return;
